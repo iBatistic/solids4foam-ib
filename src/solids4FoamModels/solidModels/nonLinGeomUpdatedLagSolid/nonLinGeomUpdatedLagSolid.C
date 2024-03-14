@@ -65,6 +65,19 @@ nonLinGeomUpdatedLagSolid::nonLinGeomUpdatedLagSolid
         mesh(),
         dimensionedTensor("I", dimless, I)
     ),
+    one_
+    (
+        IOobject
+        (
+            "one",
+            runTime.timeName(),
+            mesh(),
+            IOobject::NO_READ,
+            IOobject::NO_WRITE
+        ),
+        mesh(),
+        dimensionedScalar("one", dimless, 1.0)
+    ),
     J_
     (
         IOobject
@@ -189,6 +202,16 @@ bool nonLinGeomUpdatedLagSolid::evolve()
           + rho_*g()
           + stabilisation().stabilisation(DD(), gradDD(), impK_)
         );
+
+        // Add damping
+        if (dampingCoeff().value() > SMALL)
+        {
+            //const dimensionedScalar one("one", dimless, 1.0);
+            const dimensionedScalar oneOverTime = 1.0 / runTime().deltaT();
+            DDEqn += dampingCoeff()*rho()*oneOverTime*(fvm::Sp(one_, DD()));///runTime().deltaT());
+            //DDEqn += dampingCoeff()*rho()*(fvc::ddt(D().oldTime()) + fvm::ddt(DD())); 
+        }
+
 
         // Under-relax the linear system
         DDEqn.relax();

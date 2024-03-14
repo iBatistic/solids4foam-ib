@@ -64,7 +64,7 @@ class nonLinGeomUpdatedLagSolid
 
         //- Total deformation gradient
         volTensorField F_;
-
+        volScalarField one_;
         //- Jacobian of total deformation gradient
         volScalarField J_;
 

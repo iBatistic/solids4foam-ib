@@ -77,6 +77,7 @@ $(nonLinGeomLaws)/GentElastic/GentElastic.C
 $(nonLinGeomLaws)/OgdenElastic/OgdenElastic.C
 $(nonLinGeomLaws)/MooneyRivlinElastic/MooneyRivlinElastic.C
 $(nonLinGeomLaws)/neoHookeanElastic/neoHookeanElastic.C
+$(nonLinGeomLaws)/neoHookeanElasticFromFile/neoHookeanElasticFromFile.C
 $(nonLinGeomLaws)/neoHookeanElasticMisesPlastic/neoHookeanElasticMisesPlastic.C
 $(nonLinGeomLaws)/rotationInvariantLinearElastic/rotationInvariantLinearElastic.C
 $(nonLinGeomLaws)/StVenantKirchhoffElastic/StVenantKirchhoffElastic.C
