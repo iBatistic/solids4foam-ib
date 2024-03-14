@@ -73,10 +73,16 @@ class neoHookeanElasticFromFile
     // Private data
 
         // Shear modulus
-        dimensionedScalar mu_;
+        volScalarField mu_;
 
         // Bulk modulus
-        dimensionedScalar K_;
+        volScalarField K_;
+
+        //- Shear modulus surface field
+        surfaceScalarField muf_;
+
+        //- 1st Lame parameter surface field
+        surfaceScalarField Kf_;
 
     // Private Member Functions
 
