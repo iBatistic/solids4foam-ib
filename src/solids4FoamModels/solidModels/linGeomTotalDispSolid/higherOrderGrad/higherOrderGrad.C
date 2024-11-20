@@ -133,6 +133,47 @@ void higherOrderGrad::makeStencils() const
                 const label cellID = faceCells[faceI];
                 const label gI = faceI + boundaryMesh[patchI].start();
                 cellBoundaryFaces[cellID].append(gI);
+
+                // Here I will add first layer of cells to the boundary molecule
+
+                // List of cells surrounding this boundary face cell
+                const labelList & bouCellCells = cellCells[cellID];
+
+                forAll(bouCellCells, cellI)
+                {
+                     const label cellID = bouCellCells[cellI];
+
+                     // Get the face labels of the cell
+        	     const labelList& cellFaces = mesh.cells()[cellID];
+
+                     // Loop over faces and add faces to the molecule only if
+                     // they are not gradient, empty or coupled
+                     forAll(cellFaces, faceI)
+                     {
+                         const label faceID = cellFaces[faceI];
+
+                         if (faceID > mesh.nInternalFaces())
+                         {
+                              forAll(boundaryMesh, patchI)
+                              {
+                                  if
+                                  (
+                                     includePatchInStencils_[patchI]
+                                     && boundaryMesh[patchI].type() != emptyPolyPatch::typeName
+                                     && !boundaryMesh[patchI].coupled()
+                                  )
+                                  {
+                                      const label start = boundaryMesh[patchI].start();
+                                      const label nFaces = boundaryMesh[patchI].nFaces();
+                                      if (faceID >= start && faceID < start + nFaces)
+                                      {
+                                          cellBoundaryFaces[cellID].append(faceID);
+                                      }
+                                  }
+                              }
+                         }
+                    }
+                }
             }
         }
     }
