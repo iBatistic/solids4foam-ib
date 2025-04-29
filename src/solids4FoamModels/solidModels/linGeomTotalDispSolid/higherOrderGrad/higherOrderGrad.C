@@ -2733,6 +2733,42 @@ higherOrderGrad::~higherOrderGrad()
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
 
 
+tmp<labelField> higherOrderGrad::cellFacesStencilSize() const
+{
+    const fvMesh& mesh = mesh_;
+
+    auto tpnf = tmp<labelField>::New(mesh.nCells());
+    labelField& pnf = tpnf.ref();
+
+    // Get each face stencil
+    const List<labelList>& faceStencils = globalFaceStencils();
+
+    // Loop over cell faces stencils and merge thems into one
+    forAll(mesh.cells(), cellI)
+    {
+	labelHashSet cellStencil;
+
+	const labelList& cellFaces = mesh.cells()[cellI];
+
+	forAll(cellFaces, faceI)
+	{
+	    label faceID = cellFaces[faceI];
+
+	    // Loop over face stencil and store face stencil
+	    forAll(faceStencils[faceID], i)
+	    {
+		cellStencil.insert(faceStencils[faceID][i]);
+	    }
+	}
+
+	pnf[cellI] = cellStencil.size();
+    }
+
+    return tpnf;
+}
+
+
+
 tmp<volTensorField> higherOrderGrad::grad(const volVectorField& D) const
 {
     if (useQRDecomposition_)

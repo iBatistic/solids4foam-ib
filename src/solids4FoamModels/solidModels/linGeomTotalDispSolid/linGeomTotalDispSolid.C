@@ -513,18 +513,13 @@ bool linGeomTotalDispSolid::evolveHighOrderImplicitCoupled()
     // Update D boundary conditions
     D().correctBoundaryConditions();
 
-    scalar initResidual = 0.0;
-    SolverPerformance<vector> solverPerf;
-
-    const label size = 10;
-
     // Initialise matrix
-    sparseMatrix matrix(size);
+    sparseMatrix matrix(sum(LRE().cellFacesStencilSize()));
 
     // Initialise source vector
     vectorField source(mesh().nCells(), vector::zero);
 
-    // Get Lame parameters, they are diffusion coefficients
+    // Get Lame parameters
     // Double check formula for mu, is this mu valid for plane stress?
     const volScalarField& K = mechanical().bulkModulus();
     const volScalarField& impK = mechanical().impK();
@@ -532,6 +527,8 @@ bool linGeomTotalDispSolid::evolveHighOrderImplicitCoupled()
     const tmp<volScalarField> lambdaPtr = impK - 2.0*muPtr;
 
     // Assemble matrix
+    scalar initResidual = 0.0;
+    SolverPerformance<vector> solverPerf;
     {
 	// Add Laplacian contribution
 	hofvm::laplacian

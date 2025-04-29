@@ -25,8 +25,8 @@ Description
     Cells are added to the stencil in layers.
 
 Author
-    Ivan Batistic
-    Philip Cardiff
+    Ivan Batistic,
+    Philip Cardiff, UCD.
 
 SourceFiles
     higherOrderGrad.C
@@ -278,6 +278,9 @@ public:
 
             //- Return number of Gauss points per triangle
             label triQuadraturePtsNb() const {return triQuadraturePtsNb_;};
+
+            //- Return overall cell stencil size using cell faces stencils
+            tmp<labelField> cellFacesStencilSize() const;
 
             //- Return the face Gauss points weights
             const List<List<scalar>>& faceGaussPointsWeight() const;
