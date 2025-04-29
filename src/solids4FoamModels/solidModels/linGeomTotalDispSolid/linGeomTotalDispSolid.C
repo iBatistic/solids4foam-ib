@@ -20,12 +20,15 @@ License
 #include "linGeomTotalDispSolid.H"
 #include "fvm.H"
 #include "fvc.H"
+#include "hofvm.H"
 #include "fvMatrices.H"
 #include "addToRunTimeSelectionTable.H"
 #include "solidTractionFvPatchVectorField.H"
 #include "fixedDisplacementZeroShearFvPatchVectorField.H"
 #include "fixedDisplacementFvPatchVectorField.H"
 #include "symmetryFvPatchFields.H"
+
+//#include "sparseMatrix.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -500,6 +503,109 @@ bool linGeomTotalDispSolid::evolveExplicit()
     return true;
 }
 
+bool linGeomTotalDispSolid::evolveHighOrderImplicitCoupled()
+{
+    Info << "Solving the momentum equation for D using the high order"
+	 << "discretisation" << endl;
+
+#ifdef USE_PETSC
+
+    // Update D boundary conditions
+    D().correctBoundaryConditions();
+
+    scalar initResidual = 0.0;
+    SolverPerformance<vector> solverPerf;
+
+    const label size = 10;
+
+    // Initialise matrix
+    sparseMatrix matrix(size);
+
+    // Initialise source vector
+    vectorField source(mesh().nCells(), vector::zero);
+
+    // Get Lame parameters, they are diffusion coefficients
+    // Double check formula for mu, is this mu valid for plane stress?
+    const volScalarField& K = mechanical().bulkModulus();
+    const volScalarField& impK = mechanical().impK();
+    const tmp<volScalarField> muPtr = (impK - K)*(3.0/4.0);
+    const tmp<volScalarField> lambdaPtr = impK - 2.0*muPtr;
+
+    // Assemble matrix
+    {
+	// Add Laplacian contribution
+	hofvm::laplacian
+	(
+	    matrix,
+	    mesh(),
+	    muPtr(),
+	    LRE(),
+	    true
+	);
+	/*
+	// Add Laplacian transpose contribution
+	hofvm::laplacianTranspose
+	(
+	    matrix,
+	    mesh(),
+	    LRE()
+	    mu
+	    true
+	);
+
+	// Add Laplacian trace contribution
+	hofvm::laplacianTrace
+	(
+	    matrix,
+	    mesh(),
+	    LRE()
+	    lambda
+	    true
+	);*/
+    }
+
+    if (true)//(debug > 1)
+    {
+	matrix.print();
+    }
+
+    if (true)//(debug)
+    {
+	Info<<"bool linGeomTotalDispSolid::evolveHighOrderImplicitCoupled():"
+	    <<" solving linear system: start" << endl;
+    }
+
+    fileName optionsFile(solidModelDict().lookup("optionsFile"));
+/*
+    solverPerf = sparseMatrixTools::solveLinearSystemPETSc
+    (
+        matrix,
+	source,
+	pointDcorr,
+	twoD_,
+	optionsFile,
+	mesh().points(),
+	globalPointIndices_.ownedByThisProc(),
+	globalPointIndices_.localToGlobalPointMap(),
+	globalPointIndices_.stencilSizeOwned(),
+	globalPointIndices_.stencilSizeNotOwned(),
+	solidModelDict().lookupOrDefault<bool>("debugPETSc", false)
+    );
+*/
+    if (true)//(debug)
+    {
+	Info<<"bool linGeomTotalDispSolid::evolveHighOrderImplicitCoupled():"
+	    <<" solving linear system: end" << endl;
+    }
+#else
+    FatalErrorIn("linGeomTotalDispSolid::evolveHighOrderImplicitCoupled()")
+	<< "PETSc not available. Please set the PETSC_DIR environment "
+        << "variable and re-compile solids4foam" << abort(FatalError);
+#endif
+
+    return true;
+}
+
 
 // * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
 
@@ -578,7 +684,14 @@ linGeomTotalDispSolid::linGeomTotalDispSolid
             << "set to true" << abort(FatalError);
     }
 
-    if (solidModelDict().lookupOrDefault<Switch>("higherOrderGrad", false))
+    if
+    (
+        (
+	     solidModelDict().lookupOrDefault<Switch>("higherOrderGrad", false)
+	  || solutionAlg() == solutionAlgorithm::IMPLICIT_COUPLED
+	)
+	&& solidModelDict().found("highOrderCoeffs")
+    )
     {
         // Include fixedValue patches should in the least squares stencils
         boolList includePatchInStencils(mesh().boundaryMesh().size(), false);
@@ -602,7 +715,7 @@ linGeomTotalDispSolid::linGeomTotalDispSolid
             (
                 mesh(),
                 includePatchInStencils,
-                solidModelDict().subDict("higherOrderGradCoeffs")
+                solidModelDict().subDict("highOrderCoeffs")
             )
         );
 
@@ -765,12 +878,25 @@ bool linGeomTotalDispSolid::evolve()
     {
         return evolveSnes();
     }
-    // else if (solutionAlg() == solutionAlgorithm::IMPLICIT_COUPLED)
-    // {
-    //     // Not yet implmented, although coupledUnsLinGeomLinearElasticSolid
-    //     // could be combined with PETSc to achieve this.. todo!
-    //     return evolveImplicitCoupled();
-    // }
+    else if (solutionAlg() == solutionAlgorithm::IMPLICIT_COUPLED)
+    {
+	if (solidModelDict().found("highOrderCoeffs"))
+	{
+	    return evolveHighOrderImplicitCoupled();
+	}
+	else
+	{
+            // Not yet implmented, although coupledUnsLinGeomLinearElasticSolid
+	    // could be combined with PETSc to achieve this.. todo!
+	    //return evolveImplicitCoupled();
+
+	    FatalErrorIn
+	    (
+	        "bool linGeomTotalDispSolid::evolve"
+	    ) << "coupled implicit solver not yet implemented here"
+	      << abort(FatalError);
+	}
+    }
     else if (solutionAlg() == solutionAlgorithm::IMPLICIT_SEGREGATED)
     {
         return evolveImplicitSegregated();
@@ -791,6 +917,10 @@ bool linGeomTotalDispSolid::evolve()
             << solidModel::solutionAlgorithmNames_
                [
                    solidModel::solutionAlgorithm::IMPLICIT_SEGREGATED
+               ]
+	    << solidModel::solutionAlgorithmNames_
+               [
+                   solidModel::solutionAlgorithm::IMPLICIT_COUPLED
                ]
             << solidModel::solutionAlgorithmNames_
                [

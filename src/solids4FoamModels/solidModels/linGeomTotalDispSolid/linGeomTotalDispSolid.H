@@ -134,6 +134,10 @@ class linGeomTotalDispSolid
         //- Evolve the solid solver using the explicit approach
         bool evolveExplicit();
 
+        //- Evolve the solid solver using the high order implicit discretisation
+        //  and coupled solution strategy
+        bool evolveHighOrderImplicitCoupled();
+
         //- Disallow default bitwise copy construct
         linGeomTotalDispSolid(const linGeomTotalDispSolid&);
 
@@ -200,6 +204,15 @@ public:
             (
                 const volVectorField& D
             );
+
+            // TO_DO: This should be somewhere else
+            // TO_DO: hoGradPtr_ should be renamed to LRE which is abbr for
+            // Local Regression Estimator
+            //- Return local regression estimator class
+            const higherOrderGrad& LRE() const
+            {
+                return hoGradPtr_();
+            }
 
             //- Calculate the Jacobian for the momentum equation
             //  This Jacobian is the derivative of residualMomentum with respect

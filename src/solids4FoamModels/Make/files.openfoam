@@ -218,6 +218,7 @@ numerics/SymmTensor4thOrder/labelSymmTensor4thOrder/labelSymmTensor4thOrder.C
 numerics/SymmTensor4thOrder/symmTensor4thOrder/symmTensor4thOrder.C
 numerics/vfvCellPoint/vfvcCellPoint.C
 numerics/vfvCellPoint/vfvmCellPoint.C
+numerics/hofv/hofvm.C
 numerics/pointFieldFunctions/pointFieldFunctions.C
 
 numerics/interpolationTable/tableReaders/tableReaders.C
