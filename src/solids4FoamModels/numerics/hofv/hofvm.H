@@ -54,8 +54,10 @@ namespace hofvm
     void laplacian
     (
         sparseMatrix& matrix,
+	vectorField& source,
         const fvMesh& mesh,
-        const scalarField& diffusivity,
+	const volVectorField& D,
+        const volScalarField& diffusivity,
 	const higherOrderGrad& LRE,
         const bool debug = false
     );

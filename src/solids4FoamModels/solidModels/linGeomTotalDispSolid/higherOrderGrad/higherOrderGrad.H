@@ -165,8 +165,6 @@ class higherOrderGrad
         //- Return the least squares global cell stencils
         const labelListList& globalCellStencils() const;
 
-        //- Return the least squares face cell stencils
-        const labelListList& globalFaceStencils() const;
 
         //- Calculate exponents for the Tayler series expansion terms
         void generateExponents
@@ -208,9 +206,6 @@ class higherOrderGrad
 
         //- Return the gradient face coefficients
         const List<DynamicList<vector>>& QRGradFaceCoeffs() const;
-
-        //- Return the gradient face Gauss points coefficients
-        const List<List<DynamicList<vector>>>& QRGradFaceGPCoeffs() const;
 
         //- Return the cell boundary face indices
         const List<DynamicList<label>>& stencilsBoundaryFaces() const;
@@ -284,6 +279,12 @@ public:
 
             //- Return the face Gauss points weights
             const List<List<scalar>>& faceGaussPointsWeight() const;
+
+            //- Return the least squares face cell stencils
+            const labelListList& globalFaceStencils() const;
+
+            //- Return the gradient face Gauss points coefficients
+            const List<List<DynamicList<vector>>>& QRGradFaceGPCoeffs() const;
 
         // Edit
 

@@ -514,30 +514,42 @@ bool linGeomTotalDispSolid::evolveHighOrderImplicitCoupled()
     D().correctBoundaryConditions();
 
     // Initialise matrix
-    sparseMatrix matrix(sum(LRE().cellFacesStencilSize()));
+    const label matrixNonZeroEntries = sum(LRE().cellFacesStencilSize());
+    sparseMatrix matrix(matrixNonZeroEntries);
+    Info<<"Number of non-zero entries in matrix: "
+	 <<matrixNonZeroEntries<<" i.e. matrix is filled by "
+	<< 100*matrixNonZeroEntries/sqr(scalar(mesh().nCells()))<<"%"<<endl;
 
     // Initialise source vector
     vectorField source(mesh().nCells(), vector::zero);
 
     // Get Lame parameters
+    tmp<volScalarField> tK = mechanical().bulkModulus();
+    const volScalarField& K = tK();
+
     // Double check formula for mu, is this mu valid for plane stress?
-    const volScalarField& K = mechanical().bulkModulus();
-    const volScalarField& impK = mechanical().impK();
-    const tmp<volScalarField> muPtr = (impK - K)*(3.0/4.0);
-    const tmp<volScalarField> lambdaPtr = impK - 2.0*muPtr;
+    tmp<volScalarField> tMu = (impK_-K)*(3.0/4.0);
+    const volScalarField& mu = tMu();
+
+    tmp<volScalarField> tLambda = impK_ - 2.0*mu;
+    const volScalarField& lambda = tLambda();
 
     // Assemble matrix
     scalar initResidual = 0.0;
     SolverPerformance<vector> solverPerf;
     {
+	const bool debug = true;
+
 	// Add Laplacian contribution
 	hofvm::laplacian
 	(
 	    matrix,
+	    source,
 	    mesh(),
-	    muPtr(),
+	    D(),
+	    mu,
 	    LRE(),
-	    true
+	    debug
 	);
 	/*
 	// Add Laplacian transpose contribution
@@ -547,7 +559,7 @@ bool linGeomTotalDispSolid::evolveHighOrderImplicitCoupled()
 	    mesh(),
 	    LRE()
 	    mu
-	    true
+	    debug
 	);
 
 	// Add Laplacian trace contribution
@@ -557,11 +569,11 @@ bool linGeomTotalDispSolid::evolveHighOrderImplicitCoupled()
 	    mesh(),
 	    LRE()
 	    lambda
-	    true
+	    debug
 	);*/
     }
 
-    if (true)//(debug > 1)
+    if (debug > 1)
     {
 	matrix.print();
     }
