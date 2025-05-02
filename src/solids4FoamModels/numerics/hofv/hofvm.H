@@ -19,14 +19,12 @@ Description
     Implicit functions for cell-centre high order finite volume calculations:
     High Order Finite Volume Matrix (hofvm).
 
-    Note that these functions only set the matrix coefficients and they do not
-    modify the right hand side.
-
 SourceFiles
     hofvm.C
 
 Author
-    Ivan Batistic & Philip Cardiff, UCD.
+    Ivan Batistic,
+    Philip Cardiff, UCD.
 
 \*---------------------------------------------------------------------------*/
 
@@ -49,8 +47,32 @@ namespace Foam
 
 namespace hofvm
 {
-    // Add coefficients to the matrix for the Laplacian of a vector field with
-    // a scalar diffusivity field defined at cell centres
+
+    tensor laplacianCoeff
+    (
+        const scalar& gammaMagSf,
+	const scalar& quadWeight,
+	const vector& gradInterpCoeff,
+	const vector& faceNormal
+    );
+
+    tensor laplacianTransposeCoeff
+    (
+        const scalar& gammaMagSf,
+	const scalar& quadWeight,
+	const vector& gradInterpCoeff,
+	const vector& faceNormal
+     );
+
+    tensor laplacianTraceCoeff
+    (
+        const scalar& gammaMagSf,
+	const scalar& quadWeight,
+	const vector& gradInterpCoeff,
+	const vector& faceNormal
+     );
+
+    // Add coefficients to the matrix for the Laplacian of a vector field D
     void laplacian
     (
         sparseMatrix& matrix,
@@ -66,8 +88,11 @@ namespace hofvm
     void laplacianTranspose
     (
         sparseMatrix& matrix,
+	vectorField& source,
         const fvMesh& mesh,
-        //const scalarField& diffusivity,
+	const volVectorField& D,
+        const volScalarField& diffusivity,
+	const higherOrderGrad& LRE,
         const bool debug = false
     );
 
@@ -75,10 +100,43 @@ namespace hofvm
     void laplacianTrace
     (
         sparseMatrix& matrix,
+	vectorField& source,
         const fvMesh& mesh,
-        //const scalarField& diffusivity,
+	const volVectorField& D,
+        const volScalarField& diffusivity,
+	const higherOrderGrad& LRE,
         const bool debug = false
     );
+
+    // Function that is doing all work, matrix coefficients are calculated
+    // using static functions for coefficient calculations
+    void hofvmLaplacian
+    (
+        sparseMatrix& matrix,
+	vectorField& source,
+        const fvMesh& mesh,
+	const volVectorField& D,
+        const volScalarField& diffusivity,
+	const higherOrderGrad& LRE,
+	tensor (*calcCoeff)
+	(
+	     const scalar& gammaMagSf,
+	     const scalar& quadWeight,
+	     const vector& gradInterpCoeff,
+	     const vector& faceNormal
+        ),
+        const bool debug = false
+    );
+
+    // At traction boundary we include traction directly to source vector.
+    // Traction boundaries are skipped when calculating laplace, laplaceTrace
+    // and laplaceTranspose
+    void addTractionBoundaries
+    (
+	vectorField& source,
+        const fvMesh& mesh,
+	const volVectorField& D
+     );
 
 } // End namespace hofvm
 

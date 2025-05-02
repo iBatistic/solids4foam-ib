@@ -505,8 +505,8 @@ bool linGeomTotalDispSolid::evolveExplicit()
 
 bool linGeomTotalDispSolid::evolveHighOrderImplicitCoupled()
 {
-    Info << "Solving the momentum equation for D using the high order"
-	 << "discretisation" << endl;
+    Info << "Solving the momentum equation for D using the implicit high order"
+	 << "discretisation solver" << endl;
 
 #ifdef USE_PETSC
 
@@ -527,7 +527,7 @@ bool linGeomTotalDispSolid::evolveHighOrderImplicitCoupled()
     tmp<volScalarField> tK = mechanical().bulkModulus();
     const volScalarField& K = tK();
 
-    // Double check formula for mu, is this mu valid for plane stress?
+    // TO_DO: Double check formula for mu, is this mu valid for plane stress?
     tmp<volScalarField> tMu = (impK_-K)*(3.0/4.0);
     const volScalarField& mu = tMu();
 
@@ -538,8 +538,6 @@ bool linGeomTotalDispSolid::evolveHighOrderImplicitCoupled()
     scalar initResidual = 0.0;
     SolverPerformance<vector> solverPerf;
     {
-	const bool debug = true;
-
 	// Add Laplacian contribution
 	hofvm::laplacian
 	(
@@ -551,14 +549,16 @@ bool linGeomTotalDispSolid::evolveHighOrderImplicitCoupled()
 	    LRE(),
 	    debug
 	);
-	/*
+
 	// Add Laplacian transpose contribution
 	hofvm::laplacianTranspose
 	(
 	    matrix,
+	    source,
 	    mesh(),
-	    LRE()
-	    mu
+	    D(),
+	    mu,
+	    LRE(),
 	    debug
 	);
 
@@ -566,11 +566,17 @@ bool linGeomTotalDispSolid::evolveHighOrderImplicitCoupled()
 	hofvm::laplacianTrace
 	(
 	    matrix,
+	    source,
 	    mesh(),
-	    LRE()
-	    lambda
+	    D(),
+	    lambda,
+	    LRE(),
 	    debug
-	);*/
+	);
+
+	// Add boundary traction to source. These faces are skipped
+	// when assembling matrix
+	hofvm::addTractionBoundaries(source, mesh(), D());
     }
 
     if (debug > 1)
@@ -578,30 +584,30 @@ bool linGeomTotalDispSolid::evolveHighOrderImplicitCoupled()
 	matrix.print();
     }
 
-    if (true)//(debug)
+    if (debug)
     {
 	Info<<"bool linGeomTotalDispSolid::evolveHighOrderImplicitCoupled():"
 	    <<" solving linear system: start" << endl;
     }
 
     fileName optionsFile(solidModelDict().lookup("optionsFile"));
-/*
+
     solverPerf = sparseMatrixTools::solveLinearSystemPETSc
     (
         matrix,
 	source,
-	pointDcorr,
+	D().internalField(),
 	twoD_,
 	optionsFile,
 	mesh().points(),
-	globalPointIndices_.ownedByThisProc(),
-	globalPointIndices_.localToGlobalPointMap(),
-	globalPointIndices_.stencilSizeOwned(),
-	globalPointIndices_.stencilSizeNotOwned(),
+	//globalPointIndices_.ownedByThisProc(),
+	//globalPointIndices_.localToGlobalPointMap(),
+	//globalPointIndices_.stencilSizeOwned(),
+	//globalPointIndices_.stencilSizeNotOwned(),
 	solidModelDict().lookupOrDefault<bool>("debugPETSc", false)
     );
-*/
-    if (true)//(debug)
+
+    if (debug)
     {
 	Info<<"bool linGeomTotalDispSolid::evolveHighOrderImplicitCoupled():"
 	    <<" solving linear system: end" << endl;

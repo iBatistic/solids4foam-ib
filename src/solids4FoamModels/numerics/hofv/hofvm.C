@@ -17,6 +17,7 @@ License
 
 \*---------------------------------------------------------------------------*/
 
+#include <functional>
 #include "hofvm.H"
 #include "fvc.H"
 #include "multiplyCoeff.H"
@@ -32,6 +33,62 @@ License
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
+
+Foam::tensor Foam::hofvm::laplacianCoeff
+(
+    const scalar& gammaMagSf,
+    const scalar& quadWeight,
+    const vector& gradInterpCoeff,
+    const vector& faceNormal
+)
+{
+    return I * gammaMagSf * quadWeight* (gradInterpCoeff & faceNormal);
+}
+
+
+Foam::tensor Foam::hofvm::laplacianTransposeCoeff
+(
+    const scalar& gammaMagSf,
+    const scalar& quadWeight,
+    const vector& gradInterpCoeff,
+    const vector& faceNormal
+)
+{
+    const vector& c = gradInterpCoeff;
+    const vector& n = faceNormal;
+
+    const tensor t = tensor
+	(
+	    c.x()*n.x(), c.x()*n.y(), c.x()*n.z(),
+	    c.y()*n.x(), c.y()*n.y(), c.y()*n.z(),
+	    c.z()*n.x(), c.z()*n.y(), c.z()*n.z()
+	);
+
+    return gammaMagSf * quadWeight * t;
+}
+
+
+Foam::tensor Foam::hofvm::laplacianTraceCoeff
+(
+    const scalar& gammaMagSf,
+    const scalar& quadWeight,
+    const vector& gradInterpCoeff,
+    const vector& faceNormal
+)
+{
+    const vector& c = gradInterpCoeff;
+    const vector& n = faceNormal;
+
+    const tensor t = tensor
+	(
+	    c.x()*n.x(), c.y()*n.x(), c.z()*n.x(),
+	    c.x()*n.y(), c.y()*n.y(), c.z()*n.y(),
+	    c.x()*n.z(), c.y()*n.z(), c.z()*n.z()
+	);
+
+    return gammaMagSf * quadWeight * t;
+}
+
 void Foam::hofvm::laplacian
 (
     sparseMatrix& matrix,
@@ -43,14 +100,93 @@ void Foam::hofvm::laplacian
     const bool debug
 )
 {
+    hofvmLaplacian
+    (
+        matrix,
+        source,
+        mesh,
+	D,
+        diffusivity,
+        LRE,
+        hofvm::laplacianCoeff,
+        debug
+    );
+}
+
+void Foam::hofvm::laplacianTrace
+(
+    sparseMatrix& matrix,
+    vectorField& source,
+    const fvMesh& mesh,
+    const volVectorField& D,
+    const volScalarField& diffusivity,
+    const higherOrderGrad& LRE,
+    const bool debug
+)
+{
+    hofvmLaplacian
+    (
+        matrix,
+        source,
+        mesh,
+	D,
+	diffusivity,
+        LRE,
+        hofvm::laplacianTraceCoeff,
+        debug
+    );
+}
+
+void Foam::hofvm::laplacianTranspose
+(
+    sparseMatrix& matrix,
+    vectorField& source,
+    const fvMesh& mesh,
+    const volVectorField& D,
+    const volScalarField& diffusivity,
+    const higherOrderGrad& LRE,
+    const bool debug
+)
+{
+    hofvmLaplacian
+    (
+        matrix,
+        source,
+        mesh,
+	D,
+        diffusivity,
+        LRE,
+        hofvm::laplacianTransposeCoeff,
+        debug
+    );
+}
+
+void Foam::hofvm::hofvmLaplacian
+(
+    sparseMatrix& matrix,
+    vectorField& source,
+    const fvMesh& mesh,
+    const volVectorField& D,
+    const volScalarField& diffusivity,
+    const higherOrderGrad& LRE,
+    tensor (*calcCoeff)
+    (
+        const scalar& gammaMagSf,
+	const scalar& quadWeight,
+	const vector& gradInterpCoeff,
+	const vector& faceNormal
+    ),
+    const bool debug
+)
+{
     if (debug)
     {
-        Info<< "void Foam::hofvm::laplacian(...): start" << endl;
+        Info<< "void Foam::hofvm::hofvmLaplacian(...): start" << endl;
     }
 
     const labelUList& owner = mesh.owner();
     const labelUList& neighbour = mesh.neighbour();
-    const surfaceScalarField& magSf = mesh.magSf();
+    const scalarField& magSfI = mesh.magSf().internalField();
     const surfaceVectorField n(mesh.Sf()/mesh.magSf());
 
     // Diffusion coefficient linearly interpolated to face centres.
@@ -74,7 +210,7 @@ void Foam::hofvm::laplacian
 	// Preliminaries
 	const vector& faceNormal = n[faceI];
 
-	const scalar gammaMagSf = magSf[faceI] * gammaI[faceI];
+	const scalar gammaMagSf = magSfI[faceI] * gammaI[faceI];
 
 	// Face interpolation molecule
 	const labelList& faceStencil = stencils[faceI];
@@ -95,7 +231,7 @@ void Foam::hofvm::laplacian
 		const vector& cellGradCoeff = gradCoeffs[faceI][pointI][cI];
 
 		const tensor coeff =
-		    I*gammaMagSf*quadPointW*(cellGradCoeff&faceNormal);
+		    calcCoeff(gammaMagSf, quadPointW, cellGradCoeff, faceNormal);
 
 		matrix(owner[faceI], globalCellID) += coeff;
 		matrix(neighbour[faceI], globalCellID) -= coeff;
@@ -109,7 +245,7 @@ void Foam::hofvm::laplacian
 	const word& patchType = mesh.boundaryMesh()[patchI].type();
 	const scalarField& pMagSf = mesh.magSf().boundaryField()[patchI];
 	const scalarField& pGamma = gamma.boundaryField()[patchI];
-	const vectorField& pNormal = mesh.boundary()[patchI].nf();
+	const vectorField pNormal(mesh.boundary()[patchI].nf());
 
 	const label start = mesh.boundaryMesh()[patchI].start();
 
@@ -127,34 +263,15 @@ void Foam::hofvm::laplacian
 	}
 	else if
 	(
-	    isA<solidTractionFvPatchVectorField>(D.boundaryField()[patchI])
+	    isA<fixedGradientFvPatchVectorField>(D.boundaryField()[patchI])
 	)
         {
-	    const solidTractionFvPatchVectorField& tracPatch =
-	       refCast<const solidTractionFvPatchVectorField>
-               (
-	           D.boundaryField()[patchI]
-               );
-
-	    const vectorField traction
-	    (
-	        tracPatch.traction() - pNormal*tracPatch.pressure()
-	    );
-
-            forAll(mesh.boundaryMesh()[patchI], faceI)
-            {
-		// Get global face index
-		const label faceID = faceI + start;
-
-		// Face force
-		const vector force = pMagSf[faceI] * traction[faceI];
-
-		source[owner[faceID]] -= force;
-	    }
+	    // Skip faces with prescribed gradient.
+	    // Contribution is added directly to the source vector.
         }
 	else if
 	(
-	    isA<fixedDisplacementFvPatchVectorField>(D.boundaryField()[patchI])
+	    isA<fixedValueFvPatchVectorField>(D.boundaryField()[patchI])
 	)
 	{
             forAll(mesh.boundaryMesh()[patchI], faceI)
@@ -178,7 +295,7 @@ void Foam::hofvm::laplacian
 		    const scalar& quadPointW = faceQuadWeight[pointI];
 
 		    // Loop over interpolation stencil. Last item in faceStencil
-		    // is boundary face itself. Treated separately after loop.
+		    // is boundary face itself. Treated separately below..
 		    for(label cI = 0; cI < (faceStencil.size() - 1); cI++)
 		    {
 			const label globalCellID = faceStencil[cI];
@@ -186,7 +303,13 @@ void Foam::hofvm::laplacian
 			    gradCoeffs[faceID][pointI][cI];
 
 			const tensor coeff =
-			    I*gammaMagSf*quadPointW*(cellGradCoeff&faceNormal);
+			    calcCoeff
+			    (
+			        gammaMagSf,
+				quadPointW,
+				cellGradCoeff,
+				faceNormal
+			    );
 
 			matrix(owner[faceID], globalCellID) += coeff;
 		    }
@@ -199,7 +322,13 @@ void Foam::hofvm::laplacian
 			    gradCoeffs[faceID][pointI][size];
 
 			const tensor coeff =
-			    I*gammaMagSf*quadPointW*(cellGradCoeff&faceNormal);
+			    calcCoeff
+			    (
+			        gammaMagSf,
+				quadPointW,
+				cellGradCoeff,
+				faceNormal
+			    );
 
 			source[owner[faceID]] -=
 			    coeff & D.boundaryField()[patchI][faceI];
@@ -209,32 +338,11 @@ void Foam::hofvm::laplacian
 	}
 	else
 	{
+	    // Currently only displacement and traction boundary are implemented
 	    NotImplemented;
 	}
     }
 
-    //matrix.print();
-
-    if (debug)
-    {
-        Info<< "void Foam::hofvm::laplacian(...): end" << endl;
-    }
-}
-
-void Foam::hofvm::laplacianTranspose
-(
-    sparseMatrix& matrix,
-    const fvMesh& mesh,
-    //const scalarField& diffusivity,
-    const bool debug
-)
-{
-    if (debug)
-    {
-        Info<< "void Foam::hofvm::laplacian(...): start" << endl;
-    }
-
-
     if (debug)
     {
         Info<< "void Foam::hofvm::laplacian(...): end" << endl;
@@ -242,23 +350,46 @@ void Foam::hofvm::laplacianTranspose
 }
 
 
-void Foam::hofvm::laplacianTrace
+void Foam::hofvm::addTractionBoundaries
 (
-    sparseMatrix& matrix,
+    vectorField& source,
     const fvMesh& mesh,
-    //const scalarField& diffusivity,
-    const bool debug
+    const volVectorField& D
 )
 {
-    if (debug)
-    {
-        Info<< "void Foam::hofvm::laplacian(...): start" << endl;
-    }
+    const labelUList& owner = mesh.owner();
 
-
-    if (debug)
+    forAll(mesh.boundaryMesh(), patchI)
     {
-        Info<< "void Foam::hofvm::laplacian(...): end" << endl;
+	if (isA<solidTractionFvPatchVectorField>(D.boundaryField()[patchI]))
+	{
+	    const solidTractionFvPatchVectorField& tracPatch =
+		refCast<const solidTractionFvPatchVectorField>
+		(
+		    D.boundaryField()[patchI]
+		);
+
+            const vectorField pNormal(mesh.boundary()[patchI].nf());
+
+	    const vectorField traction
+		(
+		    tracPatch.traction() - pNormal*tracPatch.pressure()
+	        );
+
+            const label start = mesh.boundaryMesh()[patchI].start();
+            const scalarField& pMagSf = mesh.magSf().boundaryField()[patchI];
+
+	    forAll(mesh.boundaryMesh()[patchI], faceI)
+	    {
+		// Get global face index
+		const label faceID = faceI + start;
+
+		// Face force
+		const vector force = pMagSf[faceI] * traction[faceI];
+
+		source[owner[faceID]] -= force;
+	    }
+	}
     }
 }
 
