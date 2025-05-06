@@ -314,25 +314,26 @@ void Foam::hofvm::hofvmLaplacian
 			matrix(owner[faceID], globalCellID) += coeff;
 		    }
 
-		    // Include boundary value to the source
+		    //Include boundary value to the source
 		    {
-			const label size = faceStencil.size();
+		        const label size = faceStencil.size()-1;
 
-			const vector& cellGradCoeff =
-			    gradCoeffs[faceID][pointI][size];
+		        const vector& cellGradCoeff =
+		            gradCoeffs[faceID][pointI][size];
 
-			const tensor coeff =
-			    calcCoeff
-			    (
-			        gammaMagSf,
-				quadPointW,
-				cellGradCoeff,
-				faceNormal
-			    );
+		        const tensor coeff =
+		            calcCoeff
+		            (
+		                gammaMagSf,
+		        	quadPointW,
+		        	cellGradCoeff,
+		        	faceNormal
+		            );
 
-			source[owner[faceID]] -=
-			    coeff & D.boundaryField()[patchI][faceI];
+                        source[owner[faceID]] -=
+		            coeff & D.boundaryField()[patchI][faceI];
 		    }
+
 		}
 	    }
 	}

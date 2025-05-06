@@ -24,11 +24,11 @@ License
 #include "fvMatrices.H"
 #include "addToRunTimeSelectionTable.H"
 #include "solidTractionFvPatchVectorField.H"
+#include "sparseMatrixTools.H"
 #include "fixedDisplacementZeroShearFvPatchVectorField.H"
 #include "fixedDisplacementFvPatchVectorField.H"
 #include "symmetryFvPatchFields.H"
 
-//#include "sparseMatrix.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -590,14 +590,16 @@ bool linGeomTotalDispSolid::evolveHighOrderImplicitCoupled()
 	    <<" solving linear system: start" << endl;
     }
 
-    fileName optionsFile(solidModelDict().lookup("optionsFile"));
-
+    if (Switch(solidModelDict().lookup("usePETSc")))
+    {
+        fileName optionsFile(solidModelDict().lookup("optionsFile"));
+/*
     solverPerf = sparseMatrixTools::solveLinearSystemPETSc
     (
         matrix,
 	source,
-	D().internalField(),
-	twoD_,
+	D().internalFieldRef(),
+	solidModel::twoD(),
 	optionsFile,
 	mesh().points(),
 	//globalPointIndices_.ownedByThisProc(),
@@ -606,6 +608,18 @@ bool linGeomTotalDispSolid::evolveHighOrderImplicitCoupled()
 	//globalPointIndices_.stencilSizeNotOwned(),
 	solidModelDict().lookupOrDefault<bool>("debugPETSc", false)
     );
+*/
+    }
+    else
+    {
+        vectorField& solution = D().internalFieldRef();
+
+        // Use Eigen SparseLU direct solver
+        sparseMatrixTools::solveLinearSystemEigen
+        (
+            matrix, source, solution, solidModel::twoD(), false, debug
+        );
+    }
 
     if (debug)
     {
