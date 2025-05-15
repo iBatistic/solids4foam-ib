@@ -294,9 +294,8 @@ void Foam::hofvm::hofvmLaplacian
 		    // Quad point weight
 		    const scalar& quadPointW = faceQuadWeight[pointI];
 
-		    // Loop over interpolation stencil. Last item in faceStencil
-		    // is boundary face itself. Treated separately below..
-		    for(label cI = 0; cI < (faceStencil.size() - 1); cI++)
+		    // Loop over interpolation stencil.
+		    for(label cI = 0; cI < faceStencil.size(); cI++)
 		    {
 			const label globalCellID = faceStencil[cI];
 			const vector& cellGradCoeff =
@@ -314,9 +313,10 @@ void Foam::hofvm::hofvmLaplacian
 			matrix(owner[faceID], globalCellID) += coeff;
 		    }
 
-		    //Include boundary value to the source
+		    // Include boundary value to the source
+		    // Last item in gradCoeff refers to boundary face.
 		    {
-		        const label size = faceStencil.size()-1;
+		        const label size = faceStencil.size();
 
 		        const vector& cellGradCoeff =
 		            gradCoeffs[faceID][pointI][size];
@@ -333,8 +333,7 @@ void Foam::hofvm::hofvmLaplacian
                         source[owner[faceID]] -=
 		            coeff & D.boundaryField()[patchI][faceI];
 		    }
-
-		}
+ 	        }
 	    }
 	}
 	else

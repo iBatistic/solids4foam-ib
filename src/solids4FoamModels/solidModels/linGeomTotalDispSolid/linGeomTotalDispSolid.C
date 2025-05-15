@@ -516,8 +516,7 @@ bool linGeomTotalDispSolid::evolveHighOrderImplicitCoupled()
     // Initialise matrix
     const label matrixNonZeroEntries = sum(LRE().cellFacesStencilSize());
     sparseMatrix matrix(matrixNonZeroEntries);
-    Info<<"Number of non-zero entries in matrix: "
-	 <<matrixNonZeroEntries<<" i.e. matrix is filled by "
+    Info<<"Matrix is filled by "
 	<< 100*matrixNonZeroEntries/sqr(scalar(mesh().nCells()))<<"%"<<endl;
 
     // Initialise source vector

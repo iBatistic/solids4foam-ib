@@ -1688,9 +1688,7 @@ void higherOrderGrad::calcGlobalQRFaceGPCoeffs() const
         if (!mesh.isInternalFace(faceI))
         {
             const label patchID = mesh.boundaryMesh().whichPatch(faceI);
-            const polyPatch& pp = mesh.boundaryMesh()[patchID];
-
-            ghostPoint = isA<fixedValueFvPatchVectorField>(pp);
+            ghostPoint = includePatchInStencils_[patchID];
         }
 
         // Number of neighbours in stencil
@@ -1882,8 +1880,7 @@ void higherOrderGrad::calcGlobalQRFaceGPCoeffs() const
        if (!mesh.isInternalFace(faceI))
        {
            const label patchID = mesh.boundaryMesh().whichPatch(faceI);
-           const polyPatch& pp = mesh.boundaryMesh()[patchID];
-           ghostPoint = isA<fixedValueFvPatchVectorField>(pp);
+           ghostPoint = includePatchInStencils_[patchID];
        }
 
        // Number of neighbours in stencil
@@ -1911,7 +1908,7 @@ void higherOrderGrad::calcGlobalQRFaceGPCoeffs() const
 
            QRGradCoeffs[faceI][gaussPointI].shrink();
        }
-    }
+   }
 
     //if (debug)
     {
