@@ -70,9 +70,6 @@ class higherOrderGrad
         //- Kernel shape parameter
         const scalar k_;
 
-        //- Number of quadrature points per face triangle
-        const label triQuadraturePtsNb_;
-
         //- Maxium stencil size: used for initialising dynamic lists
         const label maxStencilSize_;
 
@@ -271,8 +268,8 @@ public:
 
     // Member Functions
 
-            //- Return number of Gauss points per triangle
-            label triQuadraturePtsNb() const {return triQuadraturePtsNb_;};
+            //- Return order of accuracy
+            label order() const {return N_;};
 
             //- Return overall cell stencil size using cell faces stencils
             tmp<labelField> cellFacesStencilSize() const;

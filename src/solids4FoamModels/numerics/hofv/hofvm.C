@@ -266,9 +266,10 @@ void Foam::hofvm::hofvmLaplacian
 	    isA<fixedGradientFvPatchVectorField>(D.boundaryField()[patchI])
 	)
         {
-	    // Skip faces with prescribed gradient.
-	    // Contribution is added directly to the source vector.
-        }
+	    // For now, skip faces with prescribed gradient.
+	    // Contribution is added directly to the source vector in the case
+	    // of traction
+	}
 	else if
 	(
 	    isA<fixedValueFvPatchVectorField>(D.boundaryField()[patchI])

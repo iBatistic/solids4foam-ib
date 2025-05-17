@@ -17,7 +17,7 @@ License
 
 \*---------------------------------------------------------------------------*/
 
-#include "triangleQuadrature.H"
+#include "triQuadrature.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -26,10 +26,13 @@ namespace Foam
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
-Map<triangleQuadrature::quadratureRule> triangleQuadrature::rules_;
+Map<triQuadrature::quadratureRule> triQuadrature::rules_;
+
+// * * * * * * * * * * * * * Static Member Functions * * * * * * * * * * * * //
+
 
 // Initialize and return quadrature rules
-void triangleQuadrature::constructRules()
+void triQuadrature::constructRules()
 {
     if (rules_.size() != 0)
     {
@@ -52,7 +55,7 @@ void triangleQuadrature::constructRules()
     // 3 point quadrature, exact for polynomials up to 2 order
     rules_.insert
     (
-        3,
+        2,
         quadratureRule
         {
             List<point>
@@ -68,7 +71,7 @@ void triangleQuadrature::constructRules()
     // 4 point quadrature, exact for polynomials up to 3 order
     rules_.insert
     (
-        4,
+        3,
         quadratureRule
         {
             List<point>
@@ -85,7 +88,7 @@ void triangleQuadrature::constructRules()
     // 6 point quadrature, exact for polynomials up to 4 order
     rules_.insert
     (
-        6,
+        4,
         quadratureRule
         {
             List<point>
@@ -112,7 +115,7 @@ void triangleQuadrature::constructRules()
     // 7 point quadrature, exact for polynomials up to 5 order
     rules_.insert
     (
-        7,
+        5,
         quadratureRule
         {
             List<point>
@@ -141,7 +144,7 @@ void triangleQuadrature::constructRules()
     // 12 point quadrature, exact for polynomials up to 6 order
     rules_.insert
     (
-        12,
+        6,
         quadratureRule
         {
             List<point>
@@ -179,30 +182,7 @@ void triangleQuadrature::constructRules()
 }
 
 
-// * * * * * * * * * * * * * Private Member Functions * * * * * * * * * * * * //
-
-tmp<Field<point>> triangleQuadrature::barycentricToPoint
-(
-    const List<point>& localGP
-) const
-{
-    tmp<Field<point>> tglobalGP(new Field<point>(localGP.size()));
-    Field<point>& globalGP = tglobalGP.ref();
-
-    forAll(globalGP, pointI)
-    {
-        globalGP[pointI] =
-            localGP[pointI].x()*this->a()
-          + localGP[pointI].y()*this->b()
-          + localGP[pointI].z()*this->c();
-    }
-
-    return tglobalGP;
-}
-
-// * * * * * * * * * * * * * Static Member Functions * * * * * * * * * * * * //
-
-const Map<triangleQuadrature::quadratureRule>& triangleQuadrature::rules()
+const Map<triQuadrature::quadratureRule>& triQuadrature::rules()
 {
     if (rules_.size() == 0)
     {
@@ -212,52 +192,97 @@ const Map<triangleQuadrature::quadratureRule>& triangleQuadrature::rules()
     return rules_;
 }
 
+
+// * * * * * * * * * * * * * Private Member Functions * * * * * * * * * * * * //
+
+tmp<Field<point>> triQuadrature::barycentricToPoint
+(
+    const List<point>& localPts
+) const
+{
+    tmp<Field<point>> tglobalPts(new Field<point>(localPts.size()));
+    Field<point>& globalPts = tglobalPts.ref();
+
+    forAll(globalPts, pointI)
+    {
+        globalPts[pointI] =
+            localPts[pointI].x()*this->a()
+          + localPts[pointI].y()*this->b()
+          + localPts[pointI].z()*this->c();
+    }
+
+    return tglobalPts;
+}
+
 // * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
 
 
-triangleQuadrature::triangleQuadrature(const triPoints& pts, const label& n)
+triQuadrature::triQuadrature
+(
+    const triPoints& pts,
+    const label& order
+)
 :
-    triPoints(pts),
-    n_(n)
+    quadrature(order),
+    triPoints(pts)
 {
     // Check if the requested number of points exists in the rules
-    if (!rules().found(n_))
+    if (!rules().found(order))
     {
-         FatalErrorInFunction
-            << "Gaussian quadrature rule for " << n_ << " points not available!"
+	FatalErrorInFunction
+            << "Quadrature for " << order << " order not implemented"
             << abort(FatalError);
     }
 
-    const quadratureRule& r = rules()[n_];
-    weights_ = r.weights;
-    gaussPoints_ = barycentricToPoint(r.gaussPoints);
+    weights_ = rules()[order].weights;
+    points_ = barycentricToPoint(rules()[order].points);
 }
+
 
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
 
-const List<point>& triangleQuadrature::gaussPoints() const
+
+const List<point>& triQuadrature::points() const
 {
-    return gaussPoints_;
+    return points_;
 }
 
 
-const List<scalar>& triangleQuadrature::weights() const
+const List<point> triQuadrature::points()
+{
+    return points_;
+}
+
+
+const List<scalar>& triQuadrature::weights() const
 {
     return weights_;
 }
 
 
-const List<point> triangleQuadrature::gaussPoints()
-{
-    return gaussPoints_;
-}
-
-
-const List<scalar> triangleQuadrature::weights()
+const List<scalar> triQuadrature::weights()
 {
      return weights_;
 }
 
+
+label triQuadrature::nPoints() const
+{
+    return points_.size();
+}
+
+
+label triQuadrature::nPoints(label order)
+{
+    // Check if the requested number of points exists in the rules
+    if (!rules().found(order))
+    {
+	FatalErrorInFunction
+            << "Quadrature for " << order << " order not implemented"
+            << abort(FatalError);
+    }
+    return rules()[order].points.size();
+}
 
 } // End namespace Foam
 

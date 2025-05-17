@@ -28,6 +28,7 @@ License
 #include "fixedDisplacementZeroShearFvPatchVectorField.H"
 #include "fixedDisplacementFvPatchVectorField.H"
 #include "symmetryFvPatchFields.H"
+#include "triQuadrature.H"
 
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -759,7 +760,7 @@ linGeomTotalDispSolid::linGeomTotalDispSolid
             List<symmTensor>& faceSigmaGP = sigmaGPf[i];
 
             const label nbOfTriangles = mesh().faces()[i].size() ;
-            const label nbOfGaussPoints = nbOfTriangles*hoGradPtr_->triQuadraturePtsNb();
+            const label nbOfGaussPoints = nbOfTriangles*triQuadrature::nPoints(hoGradPtr_->order());
 
             faceSigmaGP.setSize(nbOfGaussPoints);
         }

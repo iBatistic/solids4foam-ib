@@ -26,7 +26,7 @@ License
 
 #include "triangle.H"
 #include "triFace.H"
-#include "triangleQuadrature.H"
+#include "triQuadrature.H"
 
 namespace Foam
 {
@@ -1604,7 +1604,7 @@ void higherOrderGrad::calcGlobalQRFaceGPCoeffs() const
     forAll(QRGradCoeffs, faceI)
     {
         List<DynamicList<vector>>& facePointsGC = QRGradCoeffs[faceI];
-        facePointsGC.setSize(mesh.faces()[faceI].size()*triQuadraturePtsNb_);
+        facePointsGC.setSize(mesh.faces()[faceI].size()*triQuadrature::nPoints(N_));
     }
 
     // Refernces for brevity and efficiency
@@ -1641,10 +1641,10 @@ void higherOrderGrad::calcGlobalQRFaceGPCoeffs() const
     // Set size for second list
     forAll(c, faceI)
     {
-        c[faceI].setSize(mesh.faces()[faceI].size()*triQuadraturePtsNb_);
-        cx[faceI].setSize(mesh.faces()[faceI].size()*triQuadraturePtsNb_);
-        cy[faceI].setSize(mesh.faces()[faceI].size()*triQuadraturePtsNb_);
-        cz[faceI].setSize(mesh.faces()[faceI].size()*triQuadraturePtsNb_);
+        c[faceI].setSize(mesh.faces()[faceI].size()*triQuadrature::nPoints(N_));
+        cx[faceI].setSize(mesh.faces()[faceI].size()*triQuadrature::nPoints(N_));
+        cy[faceI].setSize(mesh.faces()[faceI].size()*triQuadrature::nPoints(N_));
+        cz[faceI].setSize(mesh.faces()[faceI].size()*triQuadrature::nPoints(N_));
     }
 
     const List<labelList>& stencils = globalFaceStencils();
@@ -2409,8 +2409,8 @@ void higherOrderGrad::calcGaussPointsAndWeights() const
         List<point>& fGP = faceGP[i];
         List<scalar>& fGPW = faceGPW[i];
 
-        fGP.setSize(mesh.faces()[i].size()*triQuadraturePtsNb_);
-        fGPW.setSize(mesh.faces()[i].size()*triQuadraturePtsNb_);
+        fGP.setSize(mesh.faces()[i].size()*triQuadrature::nPoints(N_));
+        fGPW.setSize(mesh.faces()[i].size()*triQuadrature::nPoints(N_));
     }
 
     // 1. Stage - decompose faces into triangles. Store triangle points
@@ -2474,13 +2474,13 @@ void higherOrderGrad::calcGaussPointsAndWeights() const
             const scalar scaleW = triArea/faceArea;
 
             // Get triangle Gauss points and weights
-            const triangleQuadrature tq(tp, triQuadraturePtsNb_);
-            const List<point>& triangleGP = tq.gaussPoints();
+            const triQuadrature tq(tp, N_);
+            const List<point>& triangleGP = tq.points();
             const List<scalar>& triangleGPweights = tq.weights();
 
             forAll(triangleGP, i)
             {
-                const label pos = tI*triQuadraturePtsNb_ + i;
+                const label pos = tI*tq.nPoints() + i;
                 faceGP[faceI][pos] = triangleGP[i];
                 faceGPW[faceI][pos] = scaleW*triangleGPweights[i];
             }
@@ -2689,7 +2689,6 @@ higherOrderGrad::higherOrderGrad
     N_(readInt(dict.lookup("N"))),
     nLayers_(readInt(dict.lookup("nLayers"))),
     k_(readScalar(dict.lookup("k"))),
-    triQuadraturePtsNb_(readInt(dict.lookup("triGaussPointsNb", 1))),
     maxStencilSize_(readInt(dict.lookup("maxStencilSize"))),
     globalCells_(mesh.nCells()),
     useQRDecomposition_(dict.lookup("useQRDecomposition")),
@@ -2955,9 +2954,7 @@ autoPtr<List<List<tensor>>> higherOrderGrad::fGradGaussPoints
         if (!mesh.isInternalFace(faceI))
         {
             const label patchID = mesh.boundaryMesh().whichPatch(faceI);
-            const polyPatch& pp = mesh.boundaryMesh()[patchID];
-
-            ghostPoint = isA<fixedValueFvPatchVectorField>(pp);
+            ghostPoint = includePatchInStencils_[patchID];
         }
 
         // Number of neighbours in stencil

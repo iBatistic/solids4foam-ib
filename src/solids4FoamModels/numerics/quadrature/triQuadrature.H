@@ -16,10 +16,10 @@ License
     along with solids4foam.  If not, see <http://www.gnu.org/licenses/>.
 
 Function
-    triangleQuadrature
+    triQuadrature
 
 Description
-    Gauss quadrature for triangle
+    Quadrature for triangle
 
     Source:
     D. A. Dunavant,
@@ -28,18 +28,19 @@ Description
     21(6):1129–1148, jun 1985.
 
 SourceFile
-    triangleQuadrature.C
+    triQuadrature.C
 
 Author
-    Ivan Batistic, FAMENA. All rights reserved.
+    Ivan Batistic, UCD. All rights reserved.
     Philip Cardiff, UCD. All rights reserved.
 
 \*---------------------------------------------------------------------------*/
 
-#ifndef triangleQuadrature_H
-#define triangleQuadrature_H
+#ifndef triQuadrature_H
+#define triQuadrature_H
 
 #include "triPoints.H"
+#include "quadrature.H"
 #include "Tuple2.H"
 #include "vectorList.H"
 #include "scalarList.H"
@@ -50,63 +51,69 @@ Author
 namespace Foam
 {
 
-class triangleQuadrature
+class triQuadrature
 :
+    public quadrature,
     public triPoints
 {
+
     // Private data
+
+        //- Quadrature points in Cartesian coordinates
+        List<point> points_;
+
+        //- Quadrature points weights
+        List<scalar> weights_;
+
+    // Private Member Functions
+
+        //- Map integration points from barycentric to cartesian coordinates
+        tmp<Field<point>> barycentricToPoint(const List<point>& localPts) const;
+
+    // Static data
 
         //- Quadrature rules storage
         struct quadratureRule
         {
-            List<point> gaussPoints;
+            List<point> points;
             List<scalar> weights;
         };
 
         //- Static storage for quadrature rules
         static Map<quadratureRule> rules_;
 
+    // Static Member Functions
+
         //- Construct rules
         static void constructRules();
 
-        //- Number of Gauss points
-        const label n_;
-
-        //- Gaussian quadrature points in Cartesian coordinates
-        List<point> gaussPoints_;
-
-        //- Gaussian quadrature points weights
-        List<scalar> weights_;
-
-    // Private Member Functions
-
-        //- Map integration points from barycentric to cartesian coordinates
-        tmp<Field<point>> barycentricToPoint(const List<point>& localGP) const;
+        //- Return integration rules
+        static const Map<quadratureRule>& rules();
 
 public:
 
     // Constructors
-    triangleQuadrature(const triPoints& pts, const label& n);
+    triQuadrature(const triPoints& pts, const label& order);
 
     // Member Functions
 
-    // Access
+        //- Get reference to quadrature points in global Cartesian coordinates
+        virtual const List<point>& points() const;
 
-        //- Predefined integration rules
-        static const Map<quadratureRule>& rules();
+        //- Get quadrature points in global Cartesian coordinates
+        virtual const List<point> points();
 
-        //- Get reference to Gaussian quadrature points in global Cartesian
-        //  coordinates
-        const List<point>& gaussPoints() const;
+        //- Get reference to quadrature points weights
+        virtual const List<scalar>& weights() const;
 
-        //- Get reference to Gaussian quadrature points weights
-        const List<scalar>& weights() const;
+        //- Get quadrature points weights
+        virtual const List<scalar> weights();
 
-        //- Get Gaussian quadrature points in global Cartesian coordinates
-        const List<point> gaussPoints();
+        //- Number of quadrature points
+        virtual label nPoints() const;
 
-        //- Get Gaussian quadrature points weights
-        const List<scalar> weights();
+        //- Return number of quadrature points without making instance
+        static label nPoints(label order);
 };
 
 } // End namespace Foam
