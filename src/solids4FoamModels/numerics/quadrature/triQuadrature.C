@@ -230,8 +230,9 @@ triQuadrature::triQuadrature
     if (!rules().found(order))
     {
 	FatalErrorInFunction
-            << "Quadrature for " << order << " order not implemented"
-            << abort(FatalError);
+            << "Quadrature for " << order << " order not implemented."
+	    << "The higest order of accuracy implemented is"
+	    << maxSupportedOrder << abort(FatalError);
     }
 
     weights_ = rules()[order].weights;
@@ -279,7 +280,8 @@ label triQuadrature::nPoints(label order)
     {
 	FatalErrorInFunction
             << "Quadrature for " << order << " order not implemented"
-            << abort(FatalError);
+    	    << "The higest order of accuracy implemented is"
+	    << maxSupportedOrder << abort(FatalError);
     }
     return rules()[order].points.size();
 }

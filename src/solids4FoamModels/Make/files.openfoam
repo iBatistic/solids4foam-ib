@@ -240,5 +240,6 @@ numerics/sparseMatrix/SparseMatrixTemplates.C
 numerics/sparseMatrix/sparseMatrixTools.C
 numerics/quadrature/quadrature.C
 numerics/quadrature/triQuadrature.C
+numerics/quadrature/lineQuadrature.C
 
 LIB = $(FOAM_MODULE_LIBBIN)/libsolids4FoamModels

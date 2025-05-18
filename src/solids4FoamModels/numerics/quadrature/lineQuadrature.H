@@ -39,7 +39,7 @@ Author
 #include "vectorList.H"
 #include "scalarList.H"
 #include "Map.H"
-#include "line.H"
+#include "linePointRef.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -49,7 +49,7 @@ namespace Foam
 class lineQuadrature
 :
     public quadrature,
-    public line
+    public linePointRef
 {
 
     // Private data
@@ -65,10 +65,19 @@ class lineQuadrature
         //- Map integration points from barycentric to cartesian coordinates
         tmp<Field<point>> parametricToPoint
 	(
-	    const scalar& x
+	    const List<scalar>& x
+        ) const;
+
+        //- Normalise weights to make sum of weights equal to 1
+        tmp<Field<scalar>> normaliseWeights
+	(
+	    const List<scalar>& w
         ) const;
 
     // Static data
+
+        //- Maximum order of accuracy when integrating polynomials
+        static constexpr label maxSupportedOrder = 19;
 
         //- Quadrature rules storage
         struct quadratureRule
@@ -91,7 +100,7 @@ class lineQuadrature
 public:
 
     // Constructors
-    lineQuadrature(const line& l, const label& order);
+    lineQuadrature(const linePointRef& l, const label& order);
 
     // Member Functions
 

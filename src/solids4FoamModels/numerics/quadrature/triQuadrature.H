@@ -72,6 +72,9 @@ class triQuadrature
 
     // Static data
 
+        //- Maximum order of accuracy when integrating polynomials
+        static constexpr label maxSupportedOrder = 6;
+
         //- Quadrature rules storage
         struct quadratureRule
         {

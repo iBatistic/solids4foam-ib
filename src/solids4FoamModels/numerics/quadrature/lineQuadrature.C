@@ -16,7 +16,7 @@ License
     along with solids4foam.  If not, see <http://www.gnu.org/licenses/>.
 
 \*---------------------------------------------------------------------------*/
-x
+
 #include "lineQuadrature.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -160,7 +160,7 @@ void lineQuadrature::constructRules()
         13,
         quadratureRule
         {
-            List<point>
+            List<scalar>
             {
 		0.0,
 		0.949107912342759,
@@ -189,14 +189,14 @@ void lineQuadrature::constructRules()
         15,
         quadratureRule
         {
-            List<point>
+            List<scalar>
             {
-		0.960289856497536
+		0.960289856497536,
 	       -0.960289856497536,
 		0.796666477413627,
 	       -0.796666477413627,
 		0.525532409916329,
-	       -0.525532409916329
+	       -0.525532409916329,
 		0.183434642495650,
 	       -0.183434642495650
             },
@@ -220,7 +220,7 @@ void lineQuadrature::constructRules()
         17,
         quadratureRule
         {
-            List<point>
+            List<scalar>
             {
 		0.968160239507626,
 	       -0.968160239507626,
@@ -253,7 +253,7 @@ void lineQuadrature::constructRules()
         19,
         quadratureRule
         {
-            List<point>
+            List<scalar>
             {
 		0.973906528517172,
 	       -0.973906528517172,
@@ -315,17 +315,37 @@ tmp<Field<point>> lineQuadrature::parametricToPoint
     return tglobalPts;
 }
 
+
+tmp<Field<scalar>> lineQuadrature::normaliseWeights
+(
+    const List<scalar>& w
+) const
+{
+    tmp<Field<scalar>> tNormWeights(new Field<scalar>(w.size()));
+    Field<scalar>& normWeights = tNormWeights.ref();
+
+    // Weights sum is 2 becouse interval is [-1,1]. When working on
+    // interval [0,1] weights should be rescaled.
+    forAll(normWeights, wI)
+    {
+	normWeights[wI] = w[wI]*0.5;
+    }
+
+    return tNormWeights;
+}
+
+
 // * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
 
 
 lineQuadrature::lineQuadrature
 (
-    const line& l,
+    const linePointRef& l,
     const label& order
 )
 :
     quadrature(order),
-    line(l)
+    linePointRef(l)
 {
     label chosenOrder = -1;
 
@@ -350,11 +370,11 @@ lineQuadrature::lineQuadrature
     {
 	FatalErrorInFunction
             << "Quadrature for " << order << " order not implemented. "
-	    << "The higest order of accuracy is 19"
+	    << "The higest order of accuracy is 19."
             << abort(FatalError);
     }
 
-    weights_ = rules()[chosenOrder].weights;
+    weights_ = normaliseWeights(rules()[chosenOrder].weights);
     points_ = parametricToPoint(rules()[chosenOrder].points);
 }
 
@@ -403,7 +423,7 @@ label lineQuadrature::nPoints(label order)
     }
     else
     {
-	for (label o = order + 1; o <= 19; ++o)
+	for (label o = order + 1; o <= maxSupportedOrder; ++o)
 	{
 	    if (rules().found(o))
 	    {
@@ -411,10 +431,7 @@ label lineQuadrature::nPoints(label order)
 		break;
 	    }
 	}
-    }
 
-    if (chosenOrder == -1)
-    {
 	FatalErrorInFunction
             << "Quadrature for " << order << " order not implemented. "
 	    << "The higest order of accuracy is 19"
