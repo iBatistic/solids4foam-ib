@@ -226,7 +226,7 @@ triQuadrature::triQuadrature
     quadrature(order),
     triPoints(pts)
 {
-    // Check if the requested number of points exists in the rules
+    // Check if the requested integration order exists in the rules
     if (!rules().found(order))
     {
 	FatalErrorInFunction
@@ -274,7 +274,7 @@ label triQuadrature::nPoints() const
 
 label triQuadrature::nPoints(label order)
 {
-    // Check if the requested number of points exists in the rules
+    // Check if the requested integration order exists in the rules
     if (!rules().found(order))
     {
 	FatalErrorInFunction
