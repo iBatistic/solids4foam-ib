@@ -309,7 +309,7 @@ tmp<Field<point>> lineQuadrature::parametricToPoint
     {
 	// Map from [-1,1] to [0,1]
 	const scalar t = 0.5*(x[pointI]+1.0);
-	globalPts[pointI] = this->a() + t * this->vec();
+	globalPts[pointI] = this->centre() + t * this->vec() * 0.5;
     }
 
     return tglobalPts;

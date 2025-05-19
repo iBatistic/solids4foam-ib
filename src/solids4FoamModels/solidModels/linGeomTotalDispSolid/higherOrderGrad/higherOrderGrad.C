@@ -27,6 +27,7 @@ License
 #include "triangle.H"
 #include "triFace.H"
 #include "triQuadrature.H"
+#include "lineQuadrature.H"
 
 namespace Foam
 {
@@ -2379,7 +2380,127 @@ void higherOrderGrad::calcGlobalCholeskyCoeffs() const
 }
 
 
-void higherOrderGrad::calcGaussPointsAndWeights() const
+void higherOrderGrad::calcQuadPointsAndWeights() const
+{
+    if (mesh_.nGeometricD() == 2)
+    {
+	if (mesh_.solutionD()[vector::Z] > -1)
+	{
+	    calcQuadPointsAndWeights2D();
+	}
+	else
+	{
+            FatalErrorIn("calcQuadPointsAndWeights()")
+                << "For 2-D models, the empty direction "
+                << "must be z!" << abort(FatalError);
+	}
+    }
+    else if (mesh_.nGeometricD() == 3)
+    {
+	calcQuadPointsAndWeights3D();
+    }
+    else
+    {
+	FatalErrorIn("calcQuadPointsAndWeights()")
+            << "Only implemented for 2-D and 3-D models!"
+	    << abort(FatalError);
+    }
+}
+
+
+void higherOrderGrad::calcQuadPointsAndWeights2D() const
+{
+    if (faceQuadPointsPtr_ || faceQuadPointsWeightPtr_)
+    {
+        FatalErrorInFunction
+            << "Pointers already set!" << abort(FatalError);
+    }
+
+    const fvMesh& mesh = mesh_;
+    const pointField& pts = mesh.points();
+    const faceList& faces = mesh.faces();
+
+    // Quadrature point locations on each face
+    faceQuadPointsPtr_.set(new List<List<point>>(mesh.nFaces()));
+    List<List<point>>& faceQP = *faceQuadPointsPtr_;
+
+    // Quadrature point weights
+    faceQuadPointsWeightPtr_.set(new List<List<scalar>>(mesh.nFaces()));
+    List<List<scalar>>& faceQPW = *faceQuadPointsWeightPtr_;
+
+    const vector emptyDir(vector(0,0,1));
+    const scalar zCentre = boundBox(mesh.points()).centre().z();
+
+    // Initialise sub-list sizes
+    forAll(faceQP, faceI)
+    {
+        List<point>& fQP = faceQP[faceI];
+        List<scalar>& fQPW = faceQPW[faceI];
+
+	// Skip empty or wedge faces
+	if (faceI >= mesh.nInternalFaces())
+	{
+	    const label patchID = mesh.boundaryMesh().whichPatch(faceI);
+	    const polyPatch& pp = mesh.boundaryMesh()[patchID];
+	    if (pp.type() == "wedge" || pp.type() == "empty")
+	    {
+		fQP.setSize(0);
+		fQPW.setSize(0);
+		continue;
+	    }
+	}
+
+        fQP.setSize(lineQuadrature::nPoints(N_));
+        fQPW.setSize(lineQuadrature::nPoints(N_));
+
+	// Set face quadrature points and corresponding weights
+	// We will loop over face edges and will take the edge that is sharing
+	// face on positive empty side, after which will edge be translated to
+	// face centre.
+
+	const face& curFace = faces[faceI];
+	const edgeList curFaceEdges = curFace.edges();
+
+	forAll(curFaceEdges, edgeI)
+	{
+	    const edge& curEdge = curFaceEdges[edgeI];
+	    const vector e  = curEdge.vec(pts);
+
+	    const scalar a = mag(e ^ emptyDir);
+
+	    if (a > SMALL)
+	    {
+		// This edge is perpendicular to empty direction, we will use it
+		point a = pts[curEdge.start()];
+		point b = pts[curEdge.end()];
+
+		// Edge is lying on either front or back empty patch, we will
+		// translate it to the mid-plane on which cell centres are.
+		a.z() = zCentre;
+		b.z() = zCentre;
+
+		// Construct line and lineQuadrature
+		const linePointRef l(a,b);
+		const lineQuadrature lq(l, N_);
+
+		const List<point>& lineQP = lq.points();
+		const List<scalar>& lineQPweights = lq.weights();
+
+		forAll(lineQP, pI)
+		{
+		    faceQP[faceI][pI] = lineQP[pI];
+		    faceQPW[faceI][pI] = lineQPweights[pI];
+		}
+
+	    // Go to next face, this face is done
+	    continue;
+	    }
+	}
+    }
+}
+
+
+void higherOrderGrad::calcQuadPointsAndWeights3D() const
 {
     if (debug)
     {
@@ -2387,7 +2508,7 @@ void higherOrderGrad::calcGaussPointsAndWeights() const
             << "start" << endl;
     }
 
-    if (faceGaussPointsPtr_ || faceGaussPointsWeightPtr_)
+    if (faceQuadPointsPtr_ || faceQuadPointsWeightPtr_)
     {
         FatalErrorInFunction
             << "Pointers already set!" << abort(FatalError);
@@ -2396,13 +2517,13 @@ void higherOrderGrad::calcGaussPointsAndWeights() const
     const fvMesh& mesh = mesh_;
     const pointField& pts = mesh.points();
 
-    // Gauss point locations on each face
-    faceGaussPointsPtr_.set(new List<List<point>>(mesh.nFaces()));
-    List<List<point>>& faceGP = *faceGaussPointsPtr_;
+    // Quadrature point locations on each face
+    faceQuadPointsPtr_.set(new List<List<point>>(mesh.nFaces()));
+    List<List<point>>& faceGP = *faceQuadPointsPtr_;
 
-    // Gauss point weights
-    faceGaussPointsWeightPtr_.set(new List<List<scalar>>(mesh.nFaces()));
-    List<List<scalar>>& faceGPW = *faceGaussPointsWeightPtr_;
+    // Quadrature point weights
+    faceQuadPointsWeightPtr_.set(new List<List<scalar>>(mesh.nFaces()));
+    List<List<scalar>>& faceGPW = *faceQuadPointsWeightPtr_;
 
     forAll(faceGP, i)
     {
@@ -2491,23 +2612,23 @@ void higherOrderGrad::calcGaussPointsAndWeights() const
 
 const List<List<point>>& higherOrderGrad::faceGaussPoints() const
 {
-    if (!faceGaussPointsPtr_)
+    if (!faceQuadPointsPtr_)
     {
-        calcGaussPointsAndWeights();
+        calcQuadPointsAndWeights();
     }
 
-    return faceGaussPointsPtr_();
+    return faceQuadPointsPtr_();
 }
 
 
 const List<List<scalar>>& higherOrderGrad::faceGaussPointsWeight() const
 {
-    if (!faceGaussPointsWeightPtr_)
+    if (!faceQuadPointsWeightPtr_)
     {
-        calcGaussPointsAndWeights();
+        calcQuadPointsAndWeights();
     }
 
-    return faceGaussPointsWeightPtr_();
+    return faceQuadPointsWeightPtr_();
 }
 
 
@@ -2705,8 +2826,8 @@ higherOrderGrad::higherOrderGrad
     choleskyPtr_(),
     QhatPtr_(),
     sqrtWPtr_(),
-    faceGaussPointsPtr_(),
-    faceGaussPointsWeightPtr_()
+    faceQuadPointsPtr_(),
+    faceQuadPointsWeightPtr_()
 {
     if (calcConditionNumber_)
     {

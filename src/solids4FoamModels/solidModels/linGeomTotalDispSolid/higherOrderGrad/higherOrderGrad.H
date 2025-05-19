@@ -140,10 +140,10 @@ class higherOrderGrad
         > sqrtWPtr_;
 
         //- Face Gauss points
-        mutable autoPtr<List<List<point>>> faceGaussPointsPtr_;
+        mutable autoPtr<List<List<point>>> faceQuadPointsPtr_;
 
         //- Face Gauss points weights
-        mutable autoPtr<List<List<scalar>>> faceGaussPointsWeightPtr_;
+        mutable autoPtr<List<List<scalar>>> faceQuadPointsWeightPtr_;
 
     // Private Member Functions
 
@@ -192,8 +192,14 @@ class higherOrderGrad
         //  the global cell stencils
         void calcGlobalCholeskyCoeffs() const;
 
-        //- Calculate Gauss points and corresponding weights
-        void calcGaussPointsAndWeights() const;
+        //- Calculate Gauss points and corresponding weights in 3D
+        void calcQuadPointsAndWeights3D() const;
+
+        //- Calculate Gauss points and corresponding weights in 2D
+        void calcQuadPointsAndWeights2D() const;
+
+        //- Calls the same funtion implemented for 3D or for 2D meshes
+        void calcQuadPointsAndWeights() const;
 
         //- Return the interpolation coefficients
         const List<DynamicList<scalar>>& QRInterpCoeffs() const;

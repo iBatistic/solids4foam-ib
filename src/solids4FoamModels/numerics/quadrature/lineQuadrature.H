@@ -21,6 +21,10 @@ Function
 Description
     Gauss-Legendre quadrature for 1D interval [-1,1].
 
+    Table data is taken from slide on this presentatin:
+    https://www.to.infn.it/~mignone/Numerical_Algorithms/
+    ch03_numerical_quadrature.pdf
+
 SourceFile
     lineQuadrature.C
 
