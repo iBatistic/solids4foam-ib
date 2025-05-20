@@ -308,8 +308,8 @@ tmp<Field<point>> lineQuadrature::parametricToPoint
     forAll(globalPts, pointI)
     {
 	// Map from [-1,1] to [0,1]
-	const scalar t = 0.5*(x[pointI]+1.0);
-	globalPts[pointI] = this->centre() + t * this->vec() * 0.5;
+	const scalar t = 0.5*x[pointI] + 0.5;
+	globalPts[pointI] = this->start() + t * this->vec();
     }
 
     return tglobalPts;
@@ -356,7 +356,7 @@ lineQuadrature::lineQuadrature
     }
     else
     {
-	for (label o = order + 1; o <= 19; ++o)
+	for (label o = order + 1; o <= maxSupportedOrder; ++o)
 	{
 	    if (rules().found(o))
 	    {
@@ -370,7 +370,7 @@ lineQuadrature::lineQuadrature
     {
 	FatalErrorInFunction
             << "Quadrature for " << order << " order not implemented. "
-	    << "The higest order of accuracy is 19."
+	    << "The higest order of accuracy is " << maxSupportedOrder
             << abort(FatalError);
     }
 
@@ -431,11 +431,13 @@ label lineQuadrature::nPoints(label order)
 		break;
 	    }
 	}
-
-	FatalErrorInFunction
-            << "Quadrature for " << order << " order not implemented. "
-	    << "The higest order of accuracy is 19"
-            << abort(FatalError);
+        if (chosenOrder == -1)
+	{
+	    FatalErrorInFunction
+		<< "Quadrature for " << order << " order not implemented. "
+		<< "The higest order of accuracy is" << maxSupportedOrder
+		<< abort(FatalError);
+	}
     }
 
     return rules()[chosenOrder].points.size();

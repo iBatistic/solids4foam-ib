@@ -2386,14 +2386,14 @@ void higherOrderGrad::calcQuadPointsAndWeights() const
     {
 	if (mesh_.solutionD()[vector::Z] > -1)
 	{
-	    calcQuadPointsAndWeights2D();
-	}
-	else
-	{
-            FatalErrorIn("calcQuadPointsAndWeights()")
+	    FatalErrorIn("calcQuadPointsAndWeights()")
                 << "For 2-D models, the empty direction "
                 << "must be z!" << abort(FatalError);
 	}
+	else
+	{
+	    calcQuadPointsAndWeights2D();
+     	}
     }
     else if (mesh_.nGeometricD() == 3)
     {
@@ -2437,16 +2437,23 @@ void higherOrderGrad::calcQuadPointsAndWeights2D() const
         List<point>& fQP = faceQP[faceI];
         List<scalar>& fQPW = faceQPW[faceI];
 
-	// Skip empty or wedge faces
+	// Skip empty faces
 	if (faceI >= mesh.nInternalFaces())
 	{
 	    const label patchID = mesh.boundaryMesh().whichPatch(faceI);
 	    const polyPatch& pp = mesh.boundaryMesh()[patchID];
-	    if (pp.type() == "wedge" || pp.type() == "empty")
+	    if (pp.type() == "empty")
 	    {
 		fQP.setSize(0);
 		fQPW.setSize(0);
 		continue;
+	    }
+	    // Stop in case of wedge, implementation is done only for 2D
+	    if (pp.type() == "wedge")
+	    {
+	    	FatalErrorIn("calcQuadPointsAndWeights2D()")
+		    << "Not implemented for axisymmetric case, to do..."
+		    << abort(FatalError);
 	    }
 	}
 
@@ -2454,9 +2461,8 @@ void higherOrderGrad::calcQuadPointsAndWeights2D() const
         fQPW.setSize(lineQuadrature::nPoints(N_));
 
 	// Set face quadrature points and corresponding weights
-	// We will loop over face edges and will take the edge that is sharing
-	// face on positive empty side, after which will edge be translated to
-	// face centre.
+	// We will loop over face edges and ttake the edge on the
+	// empty patch. Edge is translated to domain mid-plane.
 
 	const face& curFace = faces[faceI];
 	const edgeList curFaceEdges = curFace.edges();
@@ -2465,10 +2471,11 @@ void higherOrderGrad::calcQuadPointsAndWeights2D() const
 	{
 	    const edge& curEdge = curFaceEdges[edgeI];
 	    const vector e  = curEdge.vec(pts);
+	    const vector eNorm = e / mag(e);
 
-	    const scalar a = mag(e ^ emptyDir);
+	    const scalar a = mag(mag(eNorm ^ emptyDir) - 1.0);
 
-	    if (a > SMALL)
+	    if (a < SMALL)
 	    {
 		// This edge is perpendicular to empty direction, we will use it
 		point a = pts[curEdge.start()];
@@ -2492,8 +2499,8 @@ void higherOrderGrad::calcQuadPointsAndWeights2D() const
 		    faceQPW[faceI][pI] = lineQPweights[pI];
 		}
 
-	    // Go to next face, this face is done
-	    continue;
+		// Go to next face, this face is done
+		continue;
 	    }
 	}
     }
