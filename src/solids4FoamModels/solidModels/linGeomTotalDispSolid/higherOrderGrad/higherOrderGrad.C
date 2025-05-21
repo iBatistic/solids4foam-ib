@@ -2461,7 +2461,7 @@ void higherOrderGrad::calcQuadPointsAndWeights2D() const
         fQPW.setSize(lineQuadrature::nPoints(N_));
 
 	// Set face quadrature points and corresponding weights
-	// We will loop over face edges and ttake the edge on the
+	// We will loop over face edges and take the edge on the
 	// empty patch. Edge is translated to domain mid-plane.
 
 	const face& curFace = faces[faceI];
@@ -2532,56 +2532,102 @@ void higherOrderGrad::calcQuadPointsAndWeights3D() const
     faceQuadPointsWeightPtr_.set(new List<List<scalar>>(mesh.nFaces()));
     List<List<scalar>>& faceGPW = *faceQuadPointsWeightPtr_;
 
+    // 1. Stage - decompose faces into triangles. Store triangle points
+    // We have two options (N-number of face points):
+    //                      - central point triangulation (N triangles)
+    //                      - fan triangulation (N-2 triangles)
+    // Here we will choose fan triangulation to reduce the number of quadrature
+    // points per face.
+    const bool centralPointTriangulation = true;
+
+    // Triangulate each face and store points of each triangle
+    List<List<triPoints>> faceTri(mesh.nFaces());
+
+    // initialise sub-list sizes
     forAll(faceGP, i)
     {
         List<point>& fGP = faceGP[i];
         List<scalar>& fGPW = faceGPW[i];
-
-        fGP.setSize(mesh.faces()[i].size()*triQuadrature::nPoints(N_));
-        fGPW.setSize(mesh.faces()[i].size()*triQuadrature::nPoints(N_));
-    }
-
-    // 1. Stage - decompose faces into triangles. Store triangle points
-
-    // Triangulate each face and store points of each triangle
-    List<List<triPoints>> faceTri(mesh.nFaces());
-    forAll(faceTri, i)
-    {
         List<triPoints>& fT = faceTri[i];
 
-        fT.setSize(mesh.faces()[i].size());
+        if (centralPointTriangulation)
+        {
+	    fGP.setSize(mesh.faces()[i].size()*triQuadrature::nPoints(N_));
+	    fGPW.setSize(mesh.faces()[i].size()*triQuadrature::nPoints(N_));
+	    fT.setSize(mesh.faces()[i].size());
+        }
+        else
+        {
+	    fGP.setSize((mesh.faces()[i].size()-2)*triQuadrature::nPoints(N_));
+	    fGPW.setSize((mesh.faces()[i].size()-2)*triQuadrature::nPoints(N_));
+            fT.setSize(mesh.faces()[i].size() - 2);
+        }
     }
 
     // Loop over faces and decompose each face, store triangles of each face
-    for (label faceI = 0; faceI < mesh.nFaces(); ++faceI)
+    if (centralPointTriangulation)
     {
-        const face& f = mesh.faces()[faceI];
-
-        const point fc = f.centre(pts);
-
-        const label nPoints = f.size();
-
-        label nextpI;
-        for (label pI = 0; pI<nPoints; ++pI)
+	// Triangulation using central point
+        for (label faceI = 0; faceI < mesh.nFaces(); ++faceI)
         {
-            if (pI < f.size() - 1)
-            {
-                nextpI = pI + 1;
-            }
-            else
-            {
-                nextpI = 0;
-            }
+            const face& f = mesh.faces()[faceI];
 
-            const triPoints tri
-            (
-                pts[f[pI]],
-                pts[f[nextpI]],
-                fc
-            );
+            const point fc = f.centre(pts);
 
-            faceTri[faceI][pI] = tri;
+            const label nPoints = f.size();
+
+            label nextpI;
+            for (label pI = 0; pI<nPoints; ++pI)
+            {
+                if (pI < f.size() - 1)
+                {
+                    nextpI = pI + 1;
+                }
+                else
+                {
+                    nextpI = 0;
+                }
+
+                const triPoints tri
+                (
+                    pts[f[pI]],
+                    pts[f[nextpI]],
+                    fc
+                );
+
+                faceTri[faceI][pI] = tri;
+            }
         }
+    }
+    else
+    {
+	// Fan triangulation
+        for (label faceI = 0; faceI < mesh.nFaces(); ++faceI)
+        {
+            const face& f = mesh.faces()[faceI];
+            const label nPoints = f.size();
+
+	    // baseID is point label for triangulation. Here we can incorporate
+	    // some algorithm to chose the optimal point dor triangulation
+	    const label baseID = 0;
+
+	    for (label pI = 0; pI < nPoints; ++pI)
+	    {
+		label a = (baseID + 1 + pI) % nPoints;
+		label b = (baseID + 2 + pI) % nPoints;
+
+		if (b == baseID) break;
+
+		const triPoints tri
+		(
+		    pts[f[a]],
+		    pts[f[b]],
+		    pts[f[baseID]]
+		);
+
+		faceTri[faceI][pI] = tri;
+	    }
+	}
     }
 
     // 2. Stage - for each triangle calculate Gauss point locations and store
