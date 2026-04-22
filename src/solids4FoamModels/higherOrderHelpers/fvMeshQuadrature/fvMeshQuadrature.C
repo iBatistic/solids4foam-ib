@@ -279,7 +279,6 @@ void fvMeshQuadrature::calcQuadPointsAndWeights2D() const
 
     // Domain midpoint in empty direction
     const boundBox bb(pts);
-    const scalar thickness = bb.span()[emptyCmpt];
 #ifdef OPENFOAM_ORG
     const scalar mid = bb.midpoint()[emptyCmpt];
 #else
@@ -364,7 +363,7 @@ void fvMeshQuadrature::calcQuadPointsAndWeights2D() const
                 forAll(points, pI)
                 {
                     faceQP[faceI][pI] = points[pI];
-                    faceQW[faceI][pI] = weights[pI]*l.mag()*thickness;
+                    faceQW[faceI][pI] = weights[pI];
                 }
 
                 // Go to next face, this face is done
@@ -478,6 +477,22 @@ void fvMeshQuadrature::calcQuadPointsAndWeights2D() const
                 << " decomposition." << endl;
         }
 
+        scalar cellArea = 0.0;
+
+        forAll(triFaces, triI)
+        {
+            point a = pts[triFaces[triI][0]];
+            point b = pts[triFaces[triI][1]];
+            point c = pts[triFaces[triI][2]];
+
+            a[emptyCmpt] = mid;
+            b[emptyCmpt] = mid;
+            c[emptyCmpt] = mid;
+
+            const genericTriPoints tp(a, b, c);
+            cellArea += tp.mag();
+        }
+
         // Now fill quadrature points and weights
         forAll(triFaces, triI)
         {
@@ -505,7 +520,8 @@ void fvMeshQuadrature::calcQuadPointsAndWeights2D() const
             forAll(points, i)
             {
                 cellQP[cellI][base + i] = points[i];
-                cellQW[cellI][base + i] = weights[i]*triArea*thickness;
+                cellQW[cellI][base + i] =
+                    weights[i]*triArea/(cellArea + VSMALL);
             }
         }
     }
@@ -536,9 +552,6 @@ void fvMeshQuadrature::calcQuadPointsAndWeights3D() const
     if (faceOrder_ <= 1 && cellOrder_ <= 1)
     {
         const vectorField& Cf = mesh.faceCentres();
-        const vectorField& Sf = mesh.faceAreas();
-        const scalarField& V = mesh.V();
-
         faceQuadPointsPtr_.set
         (
             new CompactListList<point>(labelList(mesh.nFaces(), 1))
@@ -564,13 +577,13 @@ void fvMeshQuadrature::calcQuadPointsAndWeights3D() const
         forAll(faces, faceI)
         {
             faceQP[faceI][0] = Cf[faceI];
-            faceQW[faceI][0] = mag(Sf[faceI]);
+            faceQW[faceI][0] = 1.0;
         }
 
         forAll(cells, cellI)
         {
             cellQP[cellI][0] = C[cellI];
-            cellQW[cellI][0] = V[cellI];
+            cellQW[cellI][0] = 1.0;
         }
 
         return;
@@ -701,6 +714,12 @@ void fvMeshQuadrature::calcQuadPointsAndWeights3D() const
 #else
         const List<genericTriPoints>& fT = faceTri[faceI];
 #endif
+        scalar faceArea = 0.0;
+
+        forAll(fT, tI)
+        {
+            faceArea += fT[tI].mag();
+        }
 
         forAll(fT, tI)
         {
@@ -712,6 +731,7 @@ void fvMeshQuadrature::calcQuadPointsAndWeights3D() const
             const triQuadrature tq(tp, faceOrder_);
 #endif
             const scalar triArea = tp.mag();
+            const scalar scaleW = triArea/(faceArea + VSMALL);
             const List<point>& points = tq.points();
             const List<scalar>& weights = tq.weights();
 
@@ -719,7 +739,7 @@ void fvMeshQuadrature::calcQuadPointsAndWeights3D() const
             {
                 const label pos = tI*nTriQP + i;
                 faceQP[faceI][pos] = points[i];
-                faceQW[faceI][pos] = weights[i]*triArea;
+                faceQW[faceI][pos] = weights[i]*scaleW;
             }
         }
     }
@@ -797,7 +817,6 @@ void fvMeshQuadrature::calcQuadPointsAndWeights3D() const
             const List<point>& points = tq.points();
             const List<scalar>& weights = tq.weights();
 
-            const scalar tetV = mag(tet.mag());
 #else
         if (shape.model() == cellModel::ref(cellModel::TET))
         {
@@ -814,19 +833,48 @@ void fvMeshQuadrature::calcQuadPointsAndWeights3D() const
             const List<point>& points = tq.points();
             const List<scalar>& weights = tq.weights();
 
-            tetPointRef tetRef(tet);
-            const scalar tetV = mag(tetRef.mag());
 #endif
 
             // Store quadrature points and weights
             forAll(points, i)
             {
                 cellQP[cellI][i] = points[i];
-                cellQW[cellI][i] = weights[i]*tetV;
+                cellQW[cellI][i] = weights[i];
             }
         }
         else
         {
+            scalar cellV = 0.0;
+
+            forAll(c, fI)
+            {
+                const label faceI = c[fI];
+#ifdef OPENFOAM_ORG
+                const List<storedTriPoints>& tris = faceTri[faceI];
+#else
+                const List<genericTriPoints>& tris = faceTri[faceI];
+#endif
+
+                forAll(tris, triI)
+                {
+#ifdef OPENFOAM_ORG
+                    const storedTriPoints& tp = tris[triI];
+                    const tetrahedron<point, point> subTet
+                    (
+                        cellC,
+                        tp.a(),
+                        tp.b(),
+                        tp.c()
+                    );
+                    cellV += mag(subTet.mag());
+#else
+                    const genericTriPoints& tp = tris[triI];
+                    const tetPoints subTet(cellC, tp.a(), tp.b(), tp.c());
+                    cellV += mag(tetPointRef(subTet).mag());
+#endif
+                }
+            }
+
             label tetI = 0;
 
             // Loop over faces of the cell
@@ -875,7 +923,8 @@ void fvMeshQuadrature::calcQuadPointsAndWeights3D() const
                     forAll(points, i)
                     {
                         cellQP[cellI][base + i] = points[i];
-                        cellQW[cellI][base + i] = weights[i]*tetV;
+                        cellQW[cellI][base + i] =
+                            weights[i]*tetV/(cellV + VSMALL);
                     }
                     ++tetI;
                 }

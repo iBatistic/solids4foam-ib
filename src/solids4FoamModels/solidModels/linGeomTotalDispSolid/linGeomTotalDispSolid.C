@@ -98,8 +98,6 @@ void linGeomTotalDispSolid::enforceTractionBoundaries
                 const CompactListList<scalar>& faceQuadWeights =
                     displacementMLS().quadrature().faceQuadWeights();
 
-                const surfaceScalarField& magSf = mesh().magSf();
-
                 // Get value at patch faces quadrature points
                 autoPtr<CompactListList<vector>> patchQuadraturePointsValue =
                     tracPatch.evaluateQuadrature();
@@ -125,9 +123,6 @@ void linGeomTotalDispSolid::enforceTractionBoundaries
                             quadratureValues[faceI][pointI]
                            *faceQuadWeights[faceID][pointI];
                     }
-                    // Divide with area because we use physical weights
-                    traction.boundaryFieldRef()[patchI][faceI] *=
-                        (1.0/(magSf.boundaryField()[patchI][faceI]));
                 }
 #endif
             }

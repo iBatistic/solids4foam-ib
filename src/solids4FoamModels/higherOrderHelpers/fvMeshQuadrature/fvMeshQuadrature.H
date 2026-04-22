@@ -22,9 +22,8 @@ Description
     Provide quadrature points and weights for faces and cells. The number of
     quadrature points corresponds to the number of points to exactly integrate
     chosen order of polynomial for cell and face. Points are in global
-    coordinates and weights are phsical weights, i.e. they are multiplied with
-    triangle area. Becouse of this we don't need to normalise them and multiply
-    later with area.
+    coordinates and weights are relative weights, i.e. they sum to one over
+    the corresponding face or cell.
 
     Face quadrature:
         3D: Cell faces are triangulated using fan triangulation;

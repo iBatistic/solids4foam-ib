@@ -72,7 +72,6 @@ tmp<surfaceVectorField> hofvc::surfaceIntegrate
     surfaceVectorField& tf = tsf.ref();
 
     const vectorField normal(mesh.faceAreas()/mag(mesh.faceAreas()));
-    const surfaceScalarField& magSf = mesh.magSf();
     // Reference to integration weights
     const solidModel& solMod = lookupSolidModel(mesh);
     const CompactListList<scalar>& quadW =
@@ -90,9 +89,6 @@ tmp<surfaceVectorField> hofvc::surfaceIntegrate
             // Add traction contribution of this quadrature point
             tf[faceI] += faceNormal & (faceQuadStress[pI] * quadW[faceI][pI]);
         }
-        // We use physical weights so we need to divide with area to get
-        // traction
-        tf[faceI] *= (1.0/magSf[faceI]);
     }
 
     forAll(tf.boundaryField(), patchI)
@@ -114,8 +110,6 @@ tmp<surfaceVectorField> hofvc::surfaceIntegrate
                 tfPatch[faceI] +=
                     faceNormal & (faceQuadStress[pI] * quadW[globalFaceID][pI]);
             }
-
-            tfPatch[faceI] *= (1.0/magSf.boundaryField()[patchI][faceI]);
         }
     }
 
