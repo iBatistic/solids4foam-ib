@@ -20,6 +20,7 @@ License
 #include "analyticalSphericalCavityTractionFvPatchVectorField.H"
 #include "addToRunTimeSelectionTable.H"
 #include "volFields.H"
+#include "lookupSolidModel.H"
 #include "sphericalCavityStressDisplacement.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -151,6 +152,53 @@ void analyticalSphericalCavityTractionFvPatchVectorField::updateCoeffs()
 
     solidTractionFvPatchVectorField::updateCoeffs();
 }
+
+
+#ifndef FOAMEXTEND
+autoPtr<CompactListList<vector>>
+analyticalSphericalCavityTractionFvPatchVectorField::evaluateQuadrature() const
+{
+    const fvMesh& mesh = patch().boundaryMesh().mesh();
+    const solidModel& solMod = lookupSolidModel(mesh);
+
+    // faceQuadPoints is a list for the whole mesh
+    const CompactListList<point>& faceQuadPoints =
+        solMod.displacementMLS().quadrature().faceQuadPoints();
+
+    labelList nQpPerFace(this->size(), 0);
+    const label start = this->patch().start();
+    forAll(nQpPerFace, faceI)
+    {
+        const label globalFaceID = faceI + start;
+        nQpPerFace[faceI] = faceQuadPoints[globalFaceID].size();
+    }
+
+    autoPtr<CompactListList<vector>> tQuadPointsValue
+    (
+        new CompactListList<vector>(nQpPerFace)
+    );
+
+    CompactListList<vector>& quadPointsValue = tQuadPointsValue();
+
+    // Patch unit normals
+    const vectorField n(patch().nf());
+
+    forAll(*this, faceI)
+    {
+        const label globalFaceID = faceI + start;
+
+        // Assign the traction values at face quadrature points
+        forAll(faceQuadPoints[globalFaceID], pointI)
+        {
+            const point& quadPoint = faceQuadPoints[globalFaceID][pointI];
+            quadPointsValue[faceI][pointI] =
+                n[faceI] & sphericalCavityStress(T0_, nu_, cavityR_, quadPoint);
+        }
+    }
+
+    return tQuadPointsValue;
+}
+#endif
 
 
 // Write
