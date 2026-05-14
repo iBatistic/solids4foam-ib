@@ -5,12 +5,8 @@
 
 # Example usage:
 # ./Allrun                     -> partitioned (Aitken), serial
-# ./Allrun parallel            -> partitioned (Aitken), parallel
 # ./Allrun monolithic          -> monolithic (Newton/PETSc), serial
-# ./Allrun monolithic parallel -> monolithic (Newton/PETSc), parallel
 
-runMode=serial
-fvSolutionSuffix=""
 SOLVER="partitioned"
 
 for arg in "$@"
@@ -19,12 +15,9 @@ do
         monolithic)
             SOLVER="monolithic"
             ;;
-        parallel)
-            runMode=parallel
-            ;;
         *)
             echo "Unknown option: $arg"
-            echo "Usage: ./Allrun [monolithic] [parallel]"
+            echo "Usage: ./Allrun [monolithic]"
             exit 1
             ;;
     esac
@@ -33,8 +26,11 @@ done
 # Source solids4Foam scripts
 source solids4FoamScripts.sh
 
-echo "Compiling membraneRoof tutorial libraries"
+echo "Compiling membraneRoof2d tutorial libraries"
 (cd src && ./Allwmake)
+
+# Restore 0 directory
+restore0Dir
 
 # PETSc is required for this case
 if [[ -z "${PETSC_DIR:-}" ]]
@@ -43,9 +39,6 @@ then
     echo "Please set the PETSC_DIR variable and rebuild solids4foam"; echo
     exit 0
 fi
-
-# Restore 0 directory
-restore0Dir
 
 if [[ "$SOLVER" == "monolithic" ]]; then
     solids4Foam::caseDoesNotRunWithFoamExtend
@@ -82,29 +75,14 @@ solids4Foam::runApplication -s solid blockMesh -region solid
 solids4Foam::runApplication -s fluid blockMesh -region fluid
 
 # Refine the fluid mesh
-solids4Foam::runApplication -s fluid setSet -batch setSet.batch -region fluid
-solids4Foam::runApplication -s fluid refineMesh -region fluid -overwrite
+solids4Foam::runApplication -o -s fluid.1 setSet -batch setSet1.batch -region fluid
+solids4Foam::runApplication -o -s fluid.1 refineMesh -region fluid -dict ./system/fluid/refineMeshDict.1 -overwrite
+
+solids4Foam::runApplication -o -s fluid.2 setSet -batch setSet2.batch -region fluid
+solids4Foam::runApplication -o -s fluid.2 refineMesh -region fluid -dict ./system/fluid/refineMeshDict.2 -overwrite
 
 # Run solver
-if [[ "$runMode" == "parallel" ]]; then
-    # Run parallel
-    if [[ "$SOLVER" == "monolithic" ]]; then
-        # Monolithic: coupled decomposition across fluid+solid
-        #solids4Foam::runApplication decomposeParMonolithic -force
-        solids4Foam::runApplication -s fluid decomposePar -region fluid
-        solids4Foam::runApplication -s solid decomposePar -region solid
-    else
-        # Partitioned: independent decomposition per region
-        solids4Foam::runApplication -s fluid decomposePar -region fluid
-        solids4Foam::runApplication -s solid decomposePar -region solid
-    fi
-    solids4Foam::runParallel solids4Foam
-    solids4Foam::runApplication -s fluid reconstructPar -region fluid
-    solids4Foam::runApplication -s solid reconstructPar -region solid
-else
-    # Run serial
-    solids4Foam::runApplication solids4Foam
-fi
+solids4Foam::runApplication solids4Foam
 
 # Create plots
 if command -v gnuplot &> /dev/null

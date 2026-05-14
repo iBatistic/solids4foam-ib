@@ -12,70 +12,30 @@ FoamFile
     version     2.0;
     format      ascii;
     class       dictionary;
-    object      blockMeshDict;
+    object      refineMeshDict.1;
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-scale 1;
+set cellsToRefine1;
 
-// Membrane thickness is 0.01 (5-4.99)
-// Change 4.99 to adjust for membrane thicnness
-vertices
+coordinateSystem global;
+
+globalCoeffs
+{
+    tan1 (1 0 0);
+    tan2 (0 1 0);
+}
+
+directions
 (
-    (45 4.99 -5)     //0
-    (55 4.99 -5)     //1
-    (55 5 -5)       //2
-    (45 5 -5)       //3
-    (45 4.99 5)      //4
-    (55 4.99 5)      //5
-    (55 5 5)        //6
-    (45 5 5)        //7
+    tan1
+    tan2
 );
 
-blocks
-(
-    hex (0 1 2 3 4 5 6 7) (16 6 16) simpleGrading (1 1 1)
-);
+useHexTopology  false;
 
-edges
-(
-);
+geometricCut    false;
 
-boundary
-(
-    membrane-solid
-    {
-        type patch;
-        faces
-        (
-            (7 6 2 3)
-        );
-    }
-
-    bottom
-    {
-        type patch;
-        faces
-        (
-           (4 0 1 5)
-        );
-    }
-
-    sides
-    {
-        type patch;
-        faces
-        (
-            (4 5 6 7)
-            (4 7 3 0)
-            (5 1 2 6)
-            (3 2 1 0)
-        );
-    }
-);
-
-mergePatchPairs
-(
-);
+writeMesh       false;
 
 // ************************************************************************* //

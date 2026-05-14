@@ -12,70 +12,42 @@ FoamFile
     version     2.0;
     format      ascii;
     class       dictionary;
-    object      blockMeshDict;
+    object      controlDict;
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-scale 1;
+application     solids4Foam;
 
-// Membrane thickness is 0.01 (5-4.99)
-// Change 4.99 to adjust for membrane thicnness
-vertices
-(
-    (45 4.99 -5)     //0
-    (55 4.99 -5)     //1
-    (55 5 -5)       //2
-    (45 5 -5)       //3
-    (45 4.99 5)      //4
-    (55 4.99 5)      //5
-    (55 5 5)        //6
-    (45 5 5)        //7
-);
+startFrom       latestTime;
 
-blocks
-(
-    hex (0 1 2 3 4 5 6 7) (16 6 16) simpleGrading (1 1 1)
-);
+startTime       0;
 
-edges
-(
-);
+stopAt          endTime;
 
-boundary
-(
-    membrane-solid
-    {
-        type patch;
-        faces
-        (
-            (7 6 2 3)
-        );
-    }
+endTime         3;
 
-    bottom
-    {
-        type patch;
-        faces
-        (
-           (4 0 1 5)
-        );
-    }
+deltaT          1e-3;
 
-    sides
-    {
-        type patch;
-        faces
-        (
-            (4 5 6 7)
-            (4 7 3 0)
-            (5 1 2 6)
-            (3 2 1 0)
-        );
-    }
-);
+writeControl    timeStep;
 
-mergePatchPairs
-(
-);
+writeInterval   1;
+
+purgeWrite      0;
+
+writeFormat     ascii;
+
+writePrecision  6;
+
+writeCompression off;
+
+timeFormat      general;
+
+timePrecision   6;
+
+runTimeModifiable yes;
+
+adjustTimeStep  no;
+
+maxCo           0.2;
 
 // ************************************************************************* //

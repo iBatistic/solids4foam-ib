@@ -12,70 +12,36 @@ FoamFile
     version     2.0;
     format      ascii;
     class       dictionary;
-    object      blockMeshDict;
+    object      fluidProperties;
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-scale 1;
+fluidModel    newtonIcoFluid;
 
-// Membrane thickness is 0.01 (5-4.99)
-// Change 4.99 to adjust for membrane thicnness
-vertices
-(
-    (45 4.99 -5)     //0
-    (55 4.99 -5)     //1
-    (55 5 -5)       //2
-    (45 5 -5)       //3
-    (45 4.99 5)      //4
-    (55 4.99 5)      //5
-    (55 5 5)        //6
-    (45 5 5)        //7
-);
+newtonIcoFluidCoeffs
+{
+    // Force an implicit flux
+    forceImplicitFlux false;
 
-blocks
-(
-    hex (0 1 2 3 4 5 6 7) (16 6 16) simpleGrading (1 1 1)
-);
+    // If the flux is explicit, specific the extrapolation approach
+    // This is not used if forceImplicitFlux is enabled
+    fluidFluxExtrapolationAlgorithm1 yes;
 
-edges
-(
-);
+    // Additional divU term which is meant to improve convergence
+    addDivPhiUDamping no;
 
-boundary
-(
-    membrane-solid
+    // Scaling of pressure equation relative to the momentum
+    pressureScaleFactor 1.0;
+
+    // Pressure stabilisation approach
+    stabilisation
     {
-        type patch;
-        faces
-        (
-            (7 6 2 3)
-        );
-    }
+        type RhieChow;
+        scaleFactor 1.0;
 
-    bottom
-    {
-        type patch;
-        faces
-        (
-           (4 0 1 5)
-        );
+        // type laplacian;
+        // omega omega [0 -2 1 0 0 0 0] 1.0;
     }
-
-    sides
-    {
-        type patch;
-        faces
-        (
-            (4 5 6 7)
-            (4 7 3 0)
-            (5 1 2 6)
-            (3 2 1 0)
-        );
-    }
-);
-
-mergePatchPairs
-(
-);
+}
 
 // ************************************************************************* //

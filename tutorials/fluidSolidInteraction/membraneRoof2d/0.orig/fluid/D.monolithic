@@ -11,71 +11,61 @@ FoamFile
 {
     version     2.0;
     format      ascii;
-    class       dictionary;
-    object      blockMeshDict;
+    class       volVectorField;
+    object      D;
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-scale 1;
+dimensions      [0 1 0 0 0 0 0];
 
-// Membrane thickness is 0.01 (5-4.99)
-// Change 4.99 to adjust for membrane thicnness
-vertices
-(
-    (45 4.99 -5)     //0
-    (55 4.99 -5)     //1
-    (55 5 -5)       //2
-    (45 5 -5)       //3
-    (45 4.99 5)      //4
-    (55 4.99 5)      //5
-    (55 5 5)        //6
-    (45 5 5)        //7
-);
+internalField   uniform (0 0 0);
 
-blocks
-(
-    hex (0 1 2 3 4 5 6 7) (16 6 16) simpleGrading (1 1 1)
-);
-
-edges
-(
-);
-
-boundary
-(
-    membrane-solid
+boundaryField
+{
+    inlet
     {
-        type patch;
-        faces
-        (
-            (7 6 2 3)
-        );
+        type            fixedDisplacement;
+        value           uniform (0 0 0);
+    }
+
+    outlet
+    {
+        type            fixedDisplacement;
+        value           uniform (0 0 0);
+    }
+
+    membrane-fluid
+    {
+        type            fixedDisplacement;
+
+        // Do not update pointD from D, as the pointD interface field has
+        // already be set from the solid side
+        enforcePointPatchField no;
+        value           uniform (0 0 0);
     }
 
     bottom
     {
-        type patch;
-        faces
-        (
-           (4 0 1 5)
-        );
+        type            fixedDisplacement;
+        value           uniform (0 0 0);
     }
 
-    sides
+    frontAndBack
     {
-        type patch;
-        faces
-        (
-            (4 5 6 7)
-            (4 7 3 0)
-            (5 1 2 6)
-            (3 2 1 0)
-        );
+        type            empty;
     }
-);
 
-mergePatchPairs
-(
-);
+    building
+    {
+        type            fixedDisplacement;
+        value           uniform (0 0 0);
+    }
+
+    top
+    {
+        type            fixedDisplacement;
+        value           uniform (0 0 0);
+    }
+}
 
 // ************************************************************************* //
