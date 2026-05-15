@@ -7,8 +7,8 @@ set y2label "Fy [N]"
 set grid
 
 set y2tics
-#set yrange[-100:800]
-#set y2range[-300e3:100e3]
+set yrange[0:0.002]
+set y2range[-0.022:-0.008]
 
 plot [0:2] \
     "< sed s/[\\(\\)]//g `find . -name 'forces.dat'`" using 1:2 axis x1y1 title "Fx" with lines lw 2, \

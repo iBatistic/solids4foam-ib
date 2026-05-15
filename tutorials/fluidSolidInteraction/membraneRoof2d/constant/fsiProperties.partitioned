@@ -43,7 +43,7 @@ fluidSolidInterface    IQNILS;
     outerCorrTolerance 1e-6;
 
     // Maximum number of outer FSI loop correctors within each time-step
-    nOuterCorr 200;
+    nOuterCorr 100;
 
     // Enable/disable coupling from the start
     coupled yes;

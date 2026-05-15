@@ -21,7 +21,7 @@ fluidModel    newtonIcoFluid;
 newtonIcoFluidCoeffs
 {
     // Force an implicit flux
-    forceImplicitFlux false;
+    forceImplicitFlux true;
 
     // If the flux is explicit, specific the extrapolation approach
     // This is not used if forceImplicitFlux is enabled

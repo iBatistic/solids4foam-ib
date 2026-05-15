@@ -1,1 +1,1 @@
-cellSet cellsToRefine2 new boxToCell (0.5 0 -1) (2.2 0.3 1);
+cellSet cellsToRefine2 new boxToCell (0.3 0 -1) (1.8 0.3 1);

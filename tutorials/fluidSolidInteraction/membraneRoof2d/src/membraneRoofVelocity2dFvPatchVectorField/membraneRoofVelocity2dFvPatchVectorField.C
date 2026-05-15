@@ -122,11 +122,12 @@ void membraneRoofVelocity2dFvPatchVectorField::updateCoeffs()
     const scalar rampEndTime = 2.0;
 
     const scalarField y(patch().Cf().component(vector::Y));
-    scalarField uy(y/yTop);
-    forAll(uy, faceI)
+    scalarField eta(y/yTop);
+    forAll(eta, faceI)
     {
-        uy[faceI] = max(min(uy[faceI], 1.0), 0.0);
+        eta[faceI] = max(min(eta[faceI], 1.0), 0.0);
     }
+    const scalarField uy(2.0*eta - sqr(eta));
 
     const scalar t = db().time().value();
     scalar ut = 1.0;
