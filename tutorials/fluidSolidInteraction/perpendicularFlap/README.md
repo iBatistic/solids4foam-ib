@@ -13,6 +13,8 @@ Pa`, `nu = 0.3`) that is free to rotate about its fixed root and lies on
 the `flap` interface patch. The `frontAndBack` patch is marked `empty`,
 so the simulation is purely two-dimensional.
 
+![](images/perpendicularFlap-geometry.png)
+
 The coupling interface uses `solidPatch interface` and `fluidPatch
 flap`, while the kinematic and dynamic conditions are enforced by the
 partitioned `solids4Foam` solver. Strong coupling occurs early in the
