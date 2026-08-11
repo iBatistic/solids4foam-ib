@@ -106,6 +106,10 @@ class nonLinGeomUpdatedLagSolid
         //- Predict new time-step fields using the velocity field
         const Switch predictor_;
 
+        //- Report the consistency between the high-order deformation mapping
+        //  and the quadrature geometry rebuilt after moving the mesh
+        const Switch reportHighOrderGeometryConsistency_;
+
         //- Number of unknowns per cell, used by PETSc SNES solver
         const label blockSize_;
 
@@ -126,6 +130,9 @@ class nonLinGeomUpdatedLagSolid
 
     // Private Member Functions
 
+        //- Calculate the current face-area vectors
+        tmp<surfaceVectorField> currentSf() const;
+
         //- Predict the fields for the next time-step based on the
         //  previous time-steps
         void predict();
@@ -142,6 +149,21 @@ class nonLinGeomUpdatedLagSolid
         //- Store the current total deformation gradient at the face quadrature
         //  points as the reference for the next time step
         void storeQuadratureKinematicsOldTime() const;
+
+        //- Add high-order Taylor corrections to the linearly interpolated
+        //  displacement increment at mesh points
+        void addHighOrderPointDDCorrections();
+
+        //- Calculate face quadrature area vectors mapped by the relative
+        //  deformation gradient
+        autoPtr<CompactListList<vector>> mappedQuadratureAreaVectors() const;
+
+        //- Compare mapped quadrature area vectors against the quadrature
+        //  geometry rebuilt after moving the mesh
+        void reportHighOrderGeometryConsistency
+        (
+            const CompactListList<vector>& mappedQuadSf
+        ) const;
 #endif
 
         //- Allocate the reciprocal of the bulk modulus

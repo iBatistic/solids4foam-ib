@@ -30,6 +30,8 @@ License
 #include "compatibilityFunctions.H"
 #ifndef FOAMEXTEND
     #include "hofvm.H"
+    #include "pointConstraints.H"
+    #include "symmTensor3rdOrder.H"
 #endif
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -52,6 +54,89 @@ addToRunTimeSelectionTable
 
 
 // * * * * * * * * * * *  Private Member Functions * * * * * * * * * * * * * //
+
+
+tmp<surfaceVectorField> nonLinGeomUpdatedLagSolid::currentSf() const
+{
+    if (!highOrderResidual())
+    {
+        return fvc::interpolate(relJ_*relFinv_.T()) & mesh().Sf();
+    }
+
+#ifndef FOAMEXTEND
+    const surfaceVectorField& Sf = mesh().Sf();
+
+    tmp<surfaceVectorField> tSfCurrent
+    (
+        new surfaceVectorField
+        (
+            IOobject
+            (
+                "SfCurrent",
+                mesh().time().timeName(),
+                mesh(),
+                IOobject::NO_READ,
+                IOobject::NO_WRITE
+            ),
+            mesh(),
+            dimensionedVector("one", Sf.dimensions(), vector::one)
+        )
+    );
+    surfaceVectorField& SfCurrent = tSfCurrent.ref();
+
+    const vectorField normal(mesh().faceAreas()/mag(mesh().faceAreas()));
+    const CompactListList<scalar>& quadW =
+        displacementMLS().quadrature().faceQuadWeights();
+    // For this updated-Lagrangian model, the generic gradDQuad storage holds
+    // the displacement-increment gradient grad(DD)
+    const CompactListList<tensor>& gradDDQuad = gradDQuad();
+
+    // Only boundary values are required for enforcing traction conditions
+    forAll(SfCurrent.boundaryField(), patchI)
+    {
+        vectorField& SfCurrentPatch =
+            SfCurrent.boundaryFieldRef()[patchI];
+
+        forAll(SfCurrentPatch, faceI)
+        {
+            const label globalFaceID =
+                mesh().boundaryMesh()[patchI].start() + faceI;
+
+            if (!quadW[globalFaceID].size())
+            {
+                SfCurrentPatch[faceI] =
+                    Sf.boundaryField()[patchI][faceI];
+                continue;
+            }
+
+            SfCurrentPatch[faceI] = vector::zero;
+
+            forAll(quadW[globalFaceID], qpI)
+            {
+                const tensor relF
+                (
+                    I + gradDDQuad[globalFaceID][qpI].T()
+                );
+
+                // The quadrature weights include the reference area, so
+                // Nanson's relation is applied to the reference unit normal
+                SfCurrentPatch[faceI] +=
+                    quadW[globalFaceID][qpI]
+                   *det(relF)
+                   *(inv(relF).T() & normal[globalFaceID]);
+            }
+        }
+    }
+
+    return tSfCurrent;
+#else
+    notImplemented
+    (
+        type() + "::currentSf() with a high-order residual"
+    );
+    return tmp<surfaceVectorField>();
+#endif
+}
 
 
 void nonLinGeomUpdatedLagSolid::predict()
@@ -179,6 +264,239 @@ void nonLinGeomUpdatedLagSolid::storeQuadratureKinematicsOldTime() const
         }
     }
 }
+
+
+void nonLinGeomUpdatedLagSolid::addHighOrderPointDDCorrections()
+{
+    const movingLeastSquares& mls = displacementMLS();
+    const label polynomialOrder = mls.polynomialOrder();
+
+    if (polynomialOrder < 2)
+    {
+        return;
+    }
+
+    volScalarField DDx(DD().component(vector::X));
+    volScalarField DDy(DD().component(vector::Y));
+    volScalarField DDz(DD().component(vector::Z));
+
+    tmp<volSymmTensorField> tSecondGradX = mls.secondGrad(DDx);
+    tmp<volSymmTensorField> tSecondGradY = mls.secondGrad(DDy);
+    tmp<volSymmTensorField> tSecondGradZ = mls.secondGrad(DDz);
+    const symmTensorField& secondGradX =
+        tSecondGradX().internalField();
+    const symmTensorField& secondGradY =
+        tSecondGradY().internalField();
+    const symmTensorField& secondGradZ =
+        tSecondGradZ().internalField();
+
+    autoPtr<List<symmTensor3rdOrder>> thirdGradXPtr;
+    autoPtr<List<symmTensor3rdOrder>> thirdGradYPtr;
+    autoPtr<List<symmTensor3rdOrder>> thirdGradZPtr;
+
+    if (polynomialOrder >= 3)
+    {
+        thirdGradXPtr = mls.thirdGrad(DDx);
+        thirdGradYPtr = mls.thirdGrad(DDy);
+        thirdGradZPtr = mls.thirdGrad(DDz);
+    }
+
+    const labelListList& pointCells = mesh().pointCells();
+    const pointField& points = mesh().points();
+    const vectorField& cellCentres = mesh().cellCentres();
+    vectorField pointCorrection(points.size(), vector::zero);
+    scalarField sumWeights(points.size(), 0);
+
+    forAll(pointCells, pointI)
+    {
+        const labelList& cells = pointCells[pointI];
+
+        forAll(cells, pointCellI)
+        {
+            const label cellI = cells[pointCellI];
+            const vector delta = points[pointI] - cellCentres[cellI];
+            const scalar weight = 1.0/mag(delta);
+            vector correction(vector::zero);
+
+            correction.x() = 0.5*(delta & (secondGradX[cellI] & delta));
+            correction.y() = 0.5*(delta & (secondGradY[cellI] & delta));
+            correction.z() = 0.5*(delta & (secondGradZ[cellI] & delta));
+
+            if (polynomialOrder >= 3)
+            {
+                const scalar oneOverSix = 1.0/6.0;
+
+                correction.x() += oneOverSix*cubicForm
+                (
+                    thirdGradXPtr()[cellI], delta
+                );
+                correction.y() += oneOverSix*cubicForm
+                (
+                    thirdGradYPtr()[cellI], delta
+                );
+                correction.z() += oneOverSix*cubicForm
+                (
+                    thirdGradZPtr()[cellI], delta
+                );
+            }
+
+            pointCorrection[pointI] += weight*correction;
+            sumWeights[pointI] += weight;
+        }
+    }
+
+    // Sum contributions for points shared between processor boundaries
+    pointConstraints::syncUntransformedData
+    (
+        mesh(), pointCorrection, plusEqOp<vector>()
+    );
+    pointConstraints::syncUntransformedData
+    (
+        mesh(), sumWeights, plusEqOp<scalar>()
+    );
+
+    vectorField& pointDDI = pointDD();
+    forAll(pointDDI, pointI)
+    {
+        if (sumWeights[pointI] > ROOTVSMALL)
+        {
+            pointDDI[pointI] +=
+                pointCorrection[pointI]/sumWeights[pointI];
+        }
+    }
+}
+
+
+autoPtr<CompactListList<vector>>
+nonLinGeomUpdatedLagSolid::mappedQuadratureAreaVectors() const
+{
+    const CompactListList<scalar>& quadW =
+        displacementMLS().quadrature().faceQuadWeights();
+    const CompactListList<tensor>& gradDDQuad = gradDQuad();
+    const vectorField normal(mesh().faceAreas()/mag(mesh().faceAreas()));
+
+    labelList rowSizes(quadW.size(), 0);
+    forAll(rowSizes, faceI)
+    {
+        rowSizes[faceI] = quadW[faceI].size();
+    }
+
+    autoPtr<CompactListList<vector>> mappedQuadSfPtr
+    (
+        new CompactListList<vector>(rowSizes)
+    );
+    CompactListList<vector>& mappedQuadSf = mappedQuadSfPtr();
+
+    forAll(mappedQuadSf, faceI)
+    {
+        forAll(mappedQuadSf[faceI], qpI)
+        {
+            const tensor relF(I + gradDDQuad[faceI][qpI].T());
+
+            mappedQuadSf[faceI][qpI] =
+                quadW[faceI][qpI]*(cof(relF) & normal[faceI]);
+        }
+    }
+
+    return mappedQuadSfPtr;
+}
+
+
+void nonLinGeomUpdatedLagSolid::reportHighOrderGeometryConsistency
+(
+    const CompactListList<vector>& mappedQuadSf
+) const
+{
+    const CompactListList<scalar>& rebuiltQuadW =
+        displacementMLS().quadrature().faceQuadWeights();
+    const vectorField rebuiltNormal
+    (
+        mesh().faceAreas()/mag(mesh().faceAreas())
+    );
+
+    scalar maxQpRelativeError = 0;
+    scalar sumQpRelativeError = 0;
+    label nQp = 0;
+    scalar maxFaceRelativeError = 0;
+    scalar sumFaceRelativeError = 0;
+    label nFaces = 0;
+    const label nRows = min(mappedQuadSf.size(), rebuiltQuadW.size());
+    label nRowSizeMismatches =
+        max(mappedQuadSf.size(), rebuiltQuadW.size()) - nRows;
+
+    for (label faceI = 0; faceI < nRows; ++faceI)
+    {
+        if (mappedQuadSf[faceI].size() != rebuiltQuadW[faceI].size())
+        {
+            ++nRowSizeMismatches;
+            continue;
+        }
+
+        vector mappedFaceSf(vector::zero);
+        vector rebuiltFaceSf(vector::zero);
+
+        forAll(mappedQuadSf[faceI], qpI)
+        {
+            const vector rebuiltQuadSf
+            (
+                rebuiltQuadW[faceI][qpI]*rebuiltNormal[faceI]
+            );
+            const scalar scale = max
+            (
+                max
+                (
+                    mag(mappedQuadSf[faceI][qpI]),
+                    mag(rebuiltQuadSf)
+                ),
+                SMALL
+            );
+            const scalar relativeError =
+                mag(mappedQuadSf[faceI][qpI] - rebuiltQuadSf)/scale;
+
+            maxQpRelativeError = max(maxQpRelativeError, relativeError);
+            sumQpRelativeError += relativeError;
+            ++nQp;
+
+            mappedFaceSf += mappedQuadSf[faceI][qpI];
+            rebuiltFaceSf += rebuiltQuadSf;
+        }
+
+        const scalar faceScale = max
+        (
+            max(mag(mappedFaceSf), mag(rebuiltFaceSf)),
+            SMALL
+        );
+        const scalar faceRelativeError =
+            mag(mappedFaceSf - rebuiltFaceSf)/faceScale;
+
+        maxFaceRelativeError = max
+        (
+            maxFaceRelativeError,
+            faceRelativeError
+        );
+        sumFaceRelativeError += faceRelativeError;
+        ++nFaces;
+    }
+
+    reduce(maxQpRelativeError, maxOp<scalar>());
+    reduce(sumQpRelativeError, sumOp<scalar>());
+    reduce(nQp, sumOp<label>());
+    reduce(maxFaceRelativeError, maxOp<scalar>());
+    reduce(sumFaceRelativeError, sumOp<scalar>());
+    reduce(nFaces, sumOp<label>());
+    reduce(nRowSizeMismatches, sumOp<label>());
+
+    Info<< "High-order UL geometry consistency at time "
+        << mesh().time().timeName()
+        << ": quadrature relative error mean/max = "
+        << 100*sumQpRelativeError/max(nQp, label(1)) << "%/"
+        << 100*maxQpRelativeError << '%'
+        << ", face relative error mean/max = "
+        << 100*sumFaceRelativeError/max(nFaces, label(1)) << "%/"
+        << 100*maxFaceRelativeError << '%'
+        << ", row-size mismatches = " << nRowSizeMismatches
+        << endl;
+}
 #endif
 
 
@@ -211,27 +529,49 @@ void nonLinGeomUpdatedLagSolid::enforceTractionBoundaries
 
             const vectorField& nPatch = nCurrent.boundaryField()[patchI];
 
+            if (tracPatch.useUndeformedArea())
+            {
+                notImplemented("Not implemented for updated Lagrangian");
+            }
+
             // Specified traction at the patch faces
             vectorField tracP(nPatch.size(), vector::zero);
 
             if (highOrderResidual())
             {
 #ifndef FOAMEXTEND
-                // Face quadrature points weights
+                // Face quadrature weights include the area at the start of the
+                // time step
                 const CompactListList<scalar>& faceQuadWeights =
                     displacementMLS().quadrature().faceQuadWeights();
 
-                const surfaceScalarField& magSf = mesh().magSf();
+                const CompactListList<tensor>& faceGradDD = gradDQuad();
 
-                // Get value at patch faces quadrature points
-                autoPtr<CompactListList<vector>> patchQuadraturePointsValue =
+                const vectorField nRef
+                (
+                    mesh().boundary()[patchI].Sf()
+                   /mesh().boundary()[patchI].magSf()
+                );
+
+                autoPtr<CompactListList<vector>> quadratureValues =
                     tracPatch.evaluateQuadrature();
+                const CompactListList<vector>& tractionPressureQuad =
+                    quadratureValues();
+                const scalarField& pressure = tracPatch.pressure();
+                const scalarField& magSfCurrentPatch =
+                    magSfCurrent.boundaryField()[patchI];
 
-                const CompactListList<vector>& quadratureValues =
-                    patchQuadraturePointsValue();
+                forceP = vector::zero;
 
                 forAll(mesh().boundaryMesh()[patchI], faceI)
                 {
+                    // The pressure is constant over each face, so use the
+                    // quadrature-calculated deformed face area and normal
+                    forceP[faceI] =
+                       -pressure[faceI]
+                       *nPatch[faceI]
+                       *magSfCurrentPatch[faceI];
+
                     const label start = mesh().boundaryMesh()[patchI].start();
 
                     // Get global face index
@@ -243,32 +583,29 @@ void nonLinGeomUpdatedLagSolid::enforceTractionBoundaries
                     // Loop over quadrature points and add their contribution
                     for (label pointI = 0; pointI < nPoints; ++pointI)
                     {
-                        tracP[faceI] +=
-                            quadratureValues[faceI][pointI]
-                           *faceQuadWeights[faceID][pointI];
+                        const scalar weight =
+                            faceQuadWeights[faceID][pointI];
+                        const vector traction =
+                            tractionPressureQuad[faceI][pointI]
+                          + nRef[faceI]*pressure[faceI];
+                        const tensor relF
+                        (
+                            I + faceGradDD[faceID][pointI].T()
+                        );
+                        const vector areaMap
+                        (
+                            cof(relF) & nRef[faceI]
+                        );
+
+                        forceP[faceI] +=
+                            weight*mag(areaMap)*traction;
                     }
-                    // Divide with area because we use physical weights
-                    tracP[faceI] *=
-                        (1.0/(magSf.boundaryField()[patchI][faceI]));
                 }
 #endif
             }
             else
             {
                 tracP = tracPatch.traction() - nPatch*tracPatch.pressure();
-            }
-
-            if (tracPatch.useUndeformedArea())
-            {
-                notImplemented("Not implemented for updated Lagrangian");
-
-                // const scalarField& magSfPatch =
-                //     D.mesh().boundary()[patchI].magSf();
-
-                // forceP = tracP*magSfPatch;
-            }
-            else
-            {
                 const scalarField& magSfCurrentPatch =
                     magSfCurrent.boundaryField()[patchI];
 
@@ -440,6 +777,15 @@ bool nonLinGeomUpdatedLagSolid::evolveImplicitSegregated()
     // Interpolate cell displacement increments to vertices
     mechanical().interpolate(DD(), gradDD(), pointDD());
 
+#ifndef FOAMEXTEND
+    if (highOrderResidual())
+    {
+        addHighOrderPointDDCorrections();
+        pointDD().correctBoundaryConditions();
+        mechanical().correctSymmPlanes(pointDD());
+    }
+#endif
+
     // Total displacement at points
     pointD() = pointD().oldTime() + pointDD();
 
@@ -519,11 +865,6 @@ bool nonLinGeomUpdatedLagSolid::evolveSnes()
         F_ = relF_ & F_.oldTime();
         J_ = relJ_*J_.oldTime();
 
-        // Update the total deformation gradient at the face quadrature points
-        // so that it is consistent with the converged solution
-        mechanical().grad(DD(), gradDQuad());
-        updateQuadratureKinematics();
-
         // Calculate the cell centre stress using run-time selectable
         // mechanical law
         mechanical().correct(sigma());
@@ -532,7 +873,19 @@ bool nonLinGeomUpdatedLagSolid::evolveSnes()
 
     // Interpolate cell displacements to vertices
     mechanical().interpolate(DD(), gradDD(), pointDD());
-    pointDD().correctBoundaryConditions();
+
+#ifndef FOAMEXTEND
+    if (highOrderResidual())
+    {
+        addHighOrderPointDDCorrections();
+        pointDD().correctBoundaryConditions();
+        mechanical().correctSymmPlanes(pointDD());
+    }
+    else
+#endif
+    {
+        pointDD().correctBoundaryConditions();
+    }
 
     // Total point displacement
     pointD() = pointD().oldTime() + pointDD();;
@@ -671,6 +1024,13 @@ nonLinGeomUpdatedLagSolid::nonLinGeomUpdatedLagSolid
     rImpK_(1.0/impK_),
     rKappaPtr_(),
     predictor_(solidModelDict().lookupOrDefault<Switch>("predictor", false)),
+    reportHighOrderGeometryConsistency_
+    (
+        solidModelDict().lookupOrDefault<Switch>
+        (
+            "reportHighOrderGeometryConsistency", false
+        )
+    ),
     blockSize_
     (
         solvePressure()
@@ -952,22 +1312,22 @@ label nonLinGeomUpdatedLagSolid::formResidual
     {
         // Update displacement increment gradient
         mechanical().grad(DD, gradDD());
+
+        // Relative deformation gradient
+        relF_ = I + gradDD().T();
+
+        // Inverse relative deformation gradient
+        relFinv_ = inv(relF_);
+
+        // Total deformation gradient
+        F_ = relF_ & F_.oldTime();
+
+        // Relative Jacobian (Jacobian of relative deformation gradient)
+        relJ_ = det(relF_);
+
+        // Jacobian of deformation gradient
+        J_ = relJ_*J_.oldTime();
     }
-
-    // Relative deformation gradient
-    relF_ = I + gradDD().T();
-
-    // Inverse relative deformation gradient
-    relFinv_ = inv(relF_);
-
-    // Total deformation gradient
-    F_ = relF_ & F_.oldTime();
-
-    // Relative Jacobian (Jacobian of relative deformation gradient)
-    relJ_ = det(relF_);
-
-    // Jacobian of deformation gradient
-    J_ = relJ_*J_.oldTime();
 
     // Update the momentum equation inverse diagonal field
     // This may be used by the mechanical law when calculating the
@@ -983,12 +1343,6 @@ label nonLinGeomUpdatedLagSolid::formResidual
 
         // Calculate sigma at the face quadrature points
         mechanical().correct(gradDTotalQuadPtr_(), sigmaQuad());
-
-        // Calculate the cell-centre stress using run-time selectable
-        // mechanical law
-        // The residual uses the quadrature point stress, but the cell-centre
-        // stress is still required by tractionBoundarySnGrad
-        mechanical().correct(sigma());
 #endif
     }
     else
@@ -1056,17 +1410,13 @@ label nonLinGeomUpdatedLagSolid::formResidual
         );
     }
 
-    // Unit normal vectors at the faces
-    const surfaceVectorField n(mesh().Sf()/mesh().magSf());
-    const surfaceVectorField SfCurrent
-    (
-        fvc::interpolate(relJ_*relFinv_.T()) & mesh().Sf()
-    );
+    // Current face area vectors and unit normals
+    const tmp<surfaceVectorField> tSfCurrent(currentSf());
+    const surfaceVectorField& SfCurrent = tSfCurrent();
     const surfaceScalarField magSfCurrent(mag(SfCurrent));
     const surfaceVectorField nCurrent(SfCurrent/magSfCurrent);
 
     // Traction vectors at the faces
-    //surfaceVectorField traction(n & fvc::interpolate(sigma()));
     surfaceVectorField traction(nCurrent & fvc::interpolate(sigma()));
 
 #ifndef FOAMEXTEND
@@ -1305,7 +1655,9 @@ label nonLinGeomUpdatedLagSolid::formJacobian
         // Calculate a segregated approximation of the Jacobian
         fvVectorMatrix approxJ
         (
-            momentumStabilisation().vectorJacobian(DD, &impKf_)
+            // The updated-Lagrangian mesh changes between time steps, so a
+            // cached finite-volume Laplacian may contain stale geometry
+            momentumStabilisation().vectorJacobian(DD, &impKf_, true)
           - rho()*fvm::d2dt2(DD)
         );
 
@@ -1420,11 +1772,18 @@ void nonLinGeomUpdatedLagSolid::updateTotalFields()
     rho_ = rho_.oldTime()/relJ_;
 
 #ifndef FOAMEXTEND
+    autoPtr<CompactListList<vector>> mappedQuadSfPtr;
+
     if (highOrderResidual())
     {
         // Store the total deformation gradient at the face quadrature points:
         // it is the reference for the accumulation in the next time step
         storeQuadratureKinematicsOldTime();
+
+        if (reportHighOrderGeometryConsistency_)
+        {
+            mappedQuadSfPtr = mappedQuadratureAreaVectors();
+        }
     }
 #endif
 
@@ -1465,10 +1824,41 @@ void nonLinGeomUpdatedLagSolid::updateTotalFields()
         // Note: FQuadOldPtr_ and gradDTotalQuadPtr_ are deliberately not
         // cleared, as the quadrature points move with the material
         clearMovingLeastSquaresData();
+
+        if (mappedQuadSfPtr.valid())
+        {
+            reportHighOrderGeometryConsistency(mappedQuadSfPtr());
+        }
     }
 #endif
 
     solidModel::updateTotalFields();
+
+#ifdef USE_PETSC
+    if
+    (
+        solutionAlg() == solutionAlgorithm::PETSC_SNES
+     && highOrderResidual()
+    )
+    {
+        // The SNES options may retain the preconditioner between solves, but
+        // its finite-volume coefficients refer to the mesh on which it was
+        // assembled. Recreate SNES after moving the updated-Lagrangian mesh.
+        resetSnes();
+
+        // resetSnes also recreates the solution vector, so restore the
+        // converged displacement increment as the next initial guess
+        foamPetscSnesHelper::InsertFieldComponents<vector>
+        (
+            primitiveFieldRef(DD()),
+            foamPetscSnesHelper::solution(),
+            0,
+            solidModel::twoD()
+          ? makeList<label>({0,1})
+          : makeList<label>({0,1,2})
+        );
+    }
+#endif
 }
 
 
