@@ -29,7 +29,7 @@ solidModel     nonLinearGeometryTotalLagrangianTotalDisplacement;
 
     highOrderCoeffs
     {
-        highOrderJacobian false;
+        highOrderJacobian true;
         highOrderResidual true;
 
         displacement
