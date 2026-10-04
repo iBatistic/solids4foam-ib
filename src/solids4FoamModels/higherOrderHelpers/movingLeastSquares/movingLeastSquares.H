@@ -253,12 +253,6 @@ private:
         //- Return the cell centre interpolation coefficients
         const CompactListList<scalar>& cellInterpCoeffs() const;
 
-        //- Return the cell centre gradient coefficients
-        const CompactListList<vector>& cellGradCoeffs() const;
-
-        //- Return the cell centre second derivative coefficients
-        const CompactListList<symmTensor>&  cellSecondGradCoeffs() const;
-
         //- Return the cell centre  third derivative coefficients
         const CompactListList<symmTensor3rdOrder>& cellThirdGradCoeffs() const;
 
@@ -346,6 +340,23 @@ private:
 
         //- Return the face quadrature points gradient coefficients
         virtual const List<CompactListList<vector>>& faceGradCoeffs() const;
+
+        //- Face-gradient coefficients of the face stencil at any point, in
+        //  faceGradStencil order with any ghost or mirrored entries last;
+        //  empty on an empty patch. Optionally returns the condition number
+        void faceGradCoeffsAtPoint
+        (
+            const label faceI,
+            const point& x,
+            List<vector>& coeffs,
+            scalar* condPtr = nullptr
+        ) const;
+
+        //- Return cell first-derivative coefficients
+        virtual const CompactListList<vector>& cellGradCoeffs() const;
+
+        //- Return cell second-derivative coefficients
+        virtual const CompactListList<symmTensor>& cellSecondGradCoeffs() const;
 
         // Read-only access to the cell-centre coefficient tables. These allow
         // a solver to assemble its own high-order operators directly, rather

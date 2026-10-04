@@ -102,6 +102,13 @@ class linGeomTotalDispSolid
         //  previous time-steps
         void predict();
 
+        //- Add the separate high-order elastic traction correction
+        void addHighOrderCorrection
+        (
+            surfaceVectorField& traction,
+            const volVectorField& displacement
+        );
+
         //- Enforce traction boundary conditions on the provided traction field
         void enforceTractionBoundaries
         (

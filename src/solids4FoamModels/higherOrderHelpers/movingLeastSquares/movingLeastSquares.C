@@ -300,7 +300,7 @@ void movingLeastSquares::makeQuadrature() const
         (
             mesh_,
             polynomialOrder_,
-            polynomialOrder_ - 1,
+            faceQuadratureOrder(polynomialOrder_),
             true
         )
     );
@@ -840,33 +840,20 @@ void movingLeastSquares::calcCellCoeffs() const
 }
 
 
-void movingLeastSquares::calcFaceCoeffs() const
+void movingLeastSquares::faceGradCoeffsAtPoint
+(
+    const label faceI,
+    const point& x,
+    List<vector>& coeffs,
+    scalar* condPtr
+) const
 {
-    if (debug)
-    {
-        InfoInFunction << "start" << endl;
-    }
-
-    if (faceGradCoeffsPtr_.valid())
-    {
-        FatalErrorInFunction
-            << "Pointer already set!" << abort(FatalError);
-    }
-
     // References for brevity
     const fvMesh& mesh = mesh_;
     const bool twoD = mesh.nGeometricD() == 2;
     const vectorField& CI = mesh.C().internalField();
-    const vectorField& Cf = mesh.faceCentres();
     const surfaceVectorField& Sf = mesh.Sf();
     const globalIndex& globalCells = stencil().globalCells();
-
-    faceGradCoeffsPtr_.set
-    (
-        new List<CompactListList<vector>>(mesh.nFaces())
-    );
-    List<CompactListList<vector>>& faceGradCoeffs =
-        autoPtrRef(faceGradCoeffsPtr_);
 
     // Calculate Taylor series exponents, exponents differs for 2D and 3D case
     DynamicList<FixedList<label, 3>> exponents;
@@ -880,11 +867,7 @@ void movingLeastSquares::calcFaceCoeffs() const
         factorials[n] = factorials[n - 1]*n;
     }
 
-    // Reference to face stencils, quadrature points and remote centres
-    auto& stencils = compactListListCRef(faceGradStencil());
-    auto& faceQuadPts =
-        compactListListCRef(quadrature().faceQuadPoints());
-
+    const UList<label>& faceStencil = compactListListCRef(faceGradStencil())[faceI];
     const Map<vector>& remoteCI = stencil().remoteCentresMap();
 
     // Definition of Lambda function which will be used to get cell centres
@@ -899,218 +882,278 @@ void movingLeastSquares::calcFaceCoeffs() const
         return remoteCI[globalCellID];
     };
 
+    // Centre of current face
+    const vector& faceCentre = mesh.faceCentres()[faceI];
+
+    // Find max distance in this stencil
+    scalar maxDist = 0.0;
+    forAll(faceStencil, cI)
+    {
+        const label neiGlobalCellID = faceStencil[cI];
+
+        scalar d = mag(cellCentre(neiGlobalCellID) - faceCentre);
+
+        maxDist = max(maxDist, d);
+    }
+    // Scaling factor for Taylor series
+    const scalar h = 2.0 * maxDist;
+
+    // We need to extend stencil for ghost point at boundary. In the case
+    // of the symmetru plane we need to reflect complete stencil
+    bool ghostPoint = false;
+    bool symmetryFace = false;
+
+    // Face normal initialised and calculated below, used only for symmetry
+    // planes
+    vector faceNormal = vector::zero;
+
+    if (!mesh.isInternalFace(faceI))
+    {
+        const label patchID = mesh.boundaryMesh().whichPatch(faceI);
+        const polyPatch& pp = mesh.boundaryMesh()[patchID];
+
+        ghostPoint = includePatchInStencils_[patchID];
+
+        if
+        (
+            isA<emptyPolyPatch>(mesh.boundaryMesh()[patchID])
+        )
+        {
+            coeffs.clear();
+            return;
+        }
+
+        if
+        (
+            isA<symmetryPolyPatch>(mesh.boundaryMesh()[patchID])
+#ifndef FOAMEXTEND
+         || isA<symmetryPlanePolyPatch>(mesh.boundaryMesh()[patchID])
+#endif
+        )
+        {
+            symmetryFace = true;
+            if (ghostPoint)
+            {
+                FatalErrorInFunction
+                    << "Face " << faceI << " is on symmetry plane but it is"
+                    << " set to fix value" << abort(FatalError);
+            }
+
+            const label localFaceI = faceI - pp.start();
+            faceNormal = Sf.boundaryField()[patchID][localFaceI];
+            faceNormal /= (mag(faceNormal) + VSMALL);
+        }
+    }
+    const label stencilSize = faceStencil.size();
+
+    // Number of neighbours in stencil
+    const label Nn =
+        stencilSize
+     + (ghostPoint ? 1 : 0)
+     + (symmetryFace ? stencilSize : 0);
+
+    // Check to avoid Eigen error
+    if (Nn < Np)
+    {
+        FatalErrorInFunction
+            << "Interpolation stencil needs to be bigger than the "
+            << "number of elements in Taylor order!" << nl
+            << "Stencil size = " << Nn << ", Taylor elements = " << Np << nl
+            << "Face centre = " << faceCentre << ", face = " << faceI
+            << abort(FatalError);
+    }
+
+    // Initialise Q size, every entry in Q is set below
+    Eigen::MatrixXd Q(Np, Nn);
+
+    // Loop over stencil points and compute Q
+    for (label cI = 0; cI < Nn; ++cI)
+    {
+        label id = cI;
+
+        // Stencil mirroring for symmetry plane face
+        if (symmetryFace && cI >= stencilSize)
+        {
+            id = cI - stencilSize;
+        }
+
+        // Ghost point is appended as last entry
+        if (ghostPoint && cI == Nn - 1)
+        {
+            Q(0, cI) = 1.0;
+            for (label p = 1; p < Np; ++p)
+            {
+                Q(p, cI) = 0.0;
+            }
+            continue;
+        }
+
+        const label neiGlobalCellID = faceStencil[id];
+
+        vector dx = cellCentre(neiGlobalCellID) - x;
+
+        // Mirror dx for symmetry plane ghost stencil part
+        if (symmetryFace && cI >= stencilSize)
+        {
+            dx = transform(I - 2.0*sqr(faceNormal), dx);
+        }
+
+        // Normalise dx to improve conditioning
+        dx /= h;
+
+        // Compute monomial values for each exponent
+        for (label p = 0; p < Np; ++p)
+        {
+            const FixedList<label, 3>& exponent = exponents[p];
+            const label i = exponent[0];
+            const label j = exponent[1];
+            const label k = exponent[2];
+
+            const scalar factorialDenominator =
+                factorials[i]*factorials[j]*factorials[k];
+
+            if (twoD)
+            {
+                Q(p, cI) =
+                    pow(dx.x(), i)*pow(dx.y(), j)/factorialDenominator;
+            }
+            else
+            {
+                Q(p, cI) =
+                    pow(dx.x(), i)
+                  * pow(dx.y(), j)
+                  * pow(dx.z(), k)
+                  / factorialDenominator;
+            }
+        }
+    }
+    // Build W matrix
+    Eigen::DiagonalMatrix<double, Eigen::Dynamic> W(Nn);
+
+    for (label cI = 0; cI < Nn; ++cI)
+    {
+        // Mirrored half reuses weights
+        if (symmetryFace && cI == stencilSize)
+        {
+            W.diagonal().bottomRows(stencilSize)
+              = W.diagonal().topRows(stencilSize);
+            break;
+        }
+
+        // Ghost point gets unit weight
+        if (ghostPoint && cI == Nn - 1)
+        {
+            W.diagonal()[cI] = 1.0;
+            continue;
+        }
+
+        const label neiGlobalCellID = faceStencil[cI];
+        scalar d = mag(cellCentre(neiGlobalCellID) - x);
+
+        W.diagonal()[cI] = weightFunc().weight(d, maxDist);
+    }
+
+    QRSolution qrs = QRSolve(Q, W);
+
+    const Eigen::MatrixXd& A = qrs.A;
+
+    if (condPtr)
+    {
+        *condPtr = qrs.cond;
+    }
+
+    // Extract gradient rows and store them
+    Eigen::RowVectorXd cxRow = A.row(1)/h;
+    Eigen::RowVectorXd cyRow = A.row(2)/h;
+    Eigen::RowVectorXd czRow =
+        twoD ? Eigen::RowVectorXd::Zero(A.cols()) : (A.row(3)/h).eval();
+
+    coeffs.setSize(A.cols());
+    for (label i = 0; i < A.cols(); ++i)
+    {
+         coeffs[i] = vector(cxRow(i), cyRow(i), czRow(i));
+    }
+}
+
+
+void movingLeastSquares::calcFaceCoeffs() const
+{
+    if (debug)
+    {
+        InfoInFunction << "start" << endl;
+    }
+
+    if (faceGradCoeffsPtr_.valid())
+    {
+        FatalErrorInFunction
+            << "Pointer already set!" << abort(FatalError);
+    }
+
+    const fvMesh& mesh = mesh_;
+
+    faceGradCoeffsPtr_.set
+    (
+        new List<CompactListList<vector>>(mesh.nFaces())
+    );
+    List<CompactListList<vector>>& faceGradCoeffs =
+        autoPtrRef(faceGradCoeffsPtr_);
+
+    // Reference to face stencils and quadrature points
+    auto& stencils = compactListListCRef(faceGradStencil());
+    auto& faceQuadPts =
+        compactListListCRef(quadrature().faceQuadPoints());
+
     // Loop over all faces
     forAll(stencils, faceI)
     {
-        const UList<label>& stencil = stencils[faceI];
-
-        // Centre of current face
-        const vector& faceCentre = Cf[faceI];
-
-        // Find max distance in this stencil
-        scalar maxDist = 0.0;
-        forAll(stencil, cI)
-        {
-            const label neiGlobalCellID = stencil[cI];
-
-            scalar d = mag(cellCentre(neiGlobalCellID) - faceCentre);
-
-            maxDist = max(maxDist, d);
-        }
-        // Scaling factor for Taylor series
-        const scalar h = 2.0 * maxDist;
-
-        // We need to extend stencil for ghost point at boundary. In the case
-        // of the symmetru plane we need to reflect complete stencil
-        bool ghostPoint = false;
-        bool symmetryFace = false;
-
-        // Face normal initialised and calculated below, used only for symmetry
-        // planes
-        vector faceNormal = vector::zero;
-
-        if (!mesh.isInternalFace(faceI))
-        {
-            const label patchID = mesh.boundaryMesh().whichPatch(faceI);
-            const polyPatch& pp = mesh.boundaryMesh()[patchID];
-
-            ghostPoint = includePatchInStencils_[patchID];
-
-            if
+        if
+        (
+            !mesh.isInternalFace(faceI)
+         && isA<emptyPolyPatch>
             (
-                isA<emptyPolyPatch>(mesh.boundaryMesh()[patchID])
+                mesh.boundaryMesh()[mesh.boundaryMesh().whichPatch(faceI)]
             )
-            {
-                continue;
-            }
-
-            if
-            (
-                isA<symmetryPolyPatch>(mesh.boundaryMesh()[patchID])
-#ifndef FOAMEXTEND
-             || isA<symmetryPlanePolyPatch>(mesh.boundaryMesh()[patchID])
-#endif
-            )
-            {
-                symmetryFace = true;
-                if (ghostPoint)
-                {
-                    FatalErrorInFunction
-                        << "Face " << faceI << " is on symmetry plane but it is"
-                        << " set to fix value" << abort(FatalError);
-                }
-
-                const label localFaceI = faceI - pp.start();
-                faceNormal = Sf.boundaryField()[patchID][localFaceI];
-                faceNormal /= (mag(faceNormal) + VSMALL);
-            }
-        }
-        const label stencilSize = stencil.size();
-
-        // Number of neighbours in stencil
-        const label Nn =
-            stencilSize
-         + (ghostPoint ? 1 : 0)
-         + (symmetryFace ? stencilSize : 0);
-
-        // Check to avoid Eigen error
-        if (Nn < Np)
+        )
         {
-            FatalErrorInFunction
-                << "Interpolation stencil needs to be bigger than the "
-                << "number of elements in Taylor order!" << nl
-                << "Stencil size = " << Nn << ", Taylor elements = " << Np << nl
-                << "Face centre = " << faceCentre << ", face = " << faceI
-                << abort(FatalError);
+            continue;
         }
 
         // Face quadrature points
         const UList<point>& curFaceQuadPts = faceQuadPts[faceI];
         const label nbOfQuadPts = curFaceQuadPts.size();
 
-        // Allocate CompactListList for this face
-        labelList rowSizes(nbOfQuadPts, Nn);
-        faceGradCoeffs[faceI] = CompactListList<vector>(rowSizes);
-
         // Average face condition number
         scalar avgCond = 0.0;
+        List<vector> coeffs;
 
         // Loop over face quadrature points
         forAll(curFaceQuadPts, qpI)
         {
-            const point& quadPoint = curFaceQuadPts[qpI];
+            scalar cond = 0;
+            faceGradCoeffsAtPoint
+            (
+                faceI,
+                curFaceQuadPts[qpI],
+                coeffs,
+                calcConditionNumber_ ? &cond : nullptr
+            );
 
-            // Initialise Q size, every entry in Q is set below
-            Eigen::MatrixXd Q(Np, Nn);
-
-            // Loop over stencil points and compute Q
-            for (label cI = 0; cI < Nn; ++cI)
+            if (qpI == 0)
             {
-                label id = cI;
-
-                // Stencil mirroring for symmetry plane face
-                if (symmetryFace && cI >= stencilSize)
-                {
-                    id = cI - stencilSize;
-                }
-
-                // Ghost point is appended as last entry
-                if (ghostPoint && cI == Nn - 1)
-                {
-                    Q(0, cI) = 1.0;
-                    for (label p = 1; p < Np; ++p)
-                    {
-                        Q(p, cI) = 0.0;
-                    }
-                    continue;
-                }
-
-                const label neiGlobalCellID = stencil[id];
-
-                vector dx = cellCentre(neiGlobalCellID) - quadPoint;
-
-                // Mirror dx for symmetry plane ghost stencil part
-                if (symmetryFace && cI >= stencilSize)
-                {
-                    dx = transform(I - 2.0*sqr(faceNormal), dx);
-                }
-
-                // Normalise dx to improve conditioning
-                dx /= h;
-
-                // Compute monomial values for each exponent
-                for (label p = 0; p < Np; ++p)
-                {
-                    const FixedList<label, 3>& exponent = exponents[p];
-                    const label i = exponent[0];
-                    const label j = exponent[1];
-                    const label k = exponent[2];
-
-                    const scalar factorialDenominator =
-                        factorials[i]*factorials[j]*factorials[k];
-
-                    if (twoD)
-                    {
-                        Q(p, cI) =
-                            pow(dx.x(), i)*pow(dx.y(), j)/factorialDenominator;
-                    }
-                    else
-                    {
-                        Q(p, cI) =
-                            pow(dx.x(), i)
-                          * pow(dx.y(), j)
-                          * pow(dx.z(), k)
-                          / factorialDenominator;
-                    }
-                }
-            }
-            // Build W matrix
-            Eigen::DiagonalMatrix<double, Eigen::Dynamic> W(Nn);
-
-            for (label cI = 0; cI < Nn; ++cI)
-            {
-                // Mirrored half reuses weights
-                if (symmetryFace && cI == stencilSize)
-                {
-                    W.diagonal().bottomRows(stencilSize)
-                      = W.diagonal().topRows(stencilSize);
-                    break;
-                }
-
-                // Ghost point gets unit weight
-                if (ghostPoint && cI == Nn - 1)
-                {
-                    W.diagonal()[cI] = 1.0;
-                    continue;
-                }
-
-                const label neiGlobalCellID = stencil[cI];
-                scalar d = mag(cellCentre(neiGlobalCellID) - quadPoint);
-
-                W.diagonal()[cI] = weightFunc().weight(d, maxDist);
+                // Allocate CompactListList for this face
+                faceGradCoeffs[faceI] =
+                    CompactListList<vector>(labelList(nbOfQuadPts, coeffs.size()));
             }
 
-            QRSolution qrs = QRSolve(Q, W);
-
-            const Eigen::MatrixXd& A = qrs.A;
+            forAll(coeffs, i)
+            {
+                faceGradCoeffs[faceI][qpI][i] = coeffs[i];
+            }
 
             if (calcConditionNumber_)
             {
-                avgCond += qrs.cond*(1/scalar(nbOfQuadPts));
+                avgCond += cond*(1/scalar(nbOfQuadPts));
             }
-
-            // Extract gradient rows and store them
-            Eigen::RowVectorXd cxRow = A.row(1)/h;
-            Eigen::RowVectorXd cyRow = A.row(2)/h;
-            Eigen::RowVectorXd czRow =
-                twoD ? Eigen::RowVectorXd::Zero(A.cols()) : (A.row(3)/h).eval();
-
-            for (label i = 0; i < A.cols(); ++i)
-            {
-                 faceGradCoeffs[faceI][qpI][i] =
-                     vector(cxRow(i), cyRow(i), czRow(i));
-            }
-
         }
 
         if (calcConditionNumber_)
@@ -1155,7 +1198,7 @@ movingLeastSquares::movingLeastSquares
     const dictionary& dict
 )
 :
-    leastSquaresScheme(mesh),
+    leastSquaresScheme(mesh, dict),
     stencilPtr_(),
     quadraturePtr_(),
     weightFuncPtr_(),

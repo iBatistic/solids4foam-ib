@@ -19,6 +19,8 @@ License
 
 #include "leastSquaresScheme.H"
 #include "compatibilityFunctions.H"
+#include "quadraticGradientCorrection.H"
+#include <cmath>
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -407,12 +409,68 @@ autoPtr<leastSquaresScheme> leastSquaresScheme::New
 
 // * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * //
 
-leastSquaresScheme::leastSquaresScheme(const fvMesh& mesh)
+leastSquaresScheme::leastSquaresScheme
+(
+    const fvMesh& mesh,
+    const dictionary& dict
+)
 :
     mesh_(mesh),
+    curvatureCorrection_(dict.lookupOrDefault<Switch>("curvatureCorrection", false)),
+    curvatureCorrectionScale_
+    (
+        dict.lookupOrDefault<scalar>("curvatureCorrectionScale", 1)
+    ),
+    curvatureCorrectionRecovery_
+    (
+        dict.lookupOrDefault<word>("curvatureCorrectionRecovery", "twoCell")
+    ),
+    faceQuadratureOrder_(dict.lookupOrDefault<label>("faceQuadratureOrder", -1)),
+    curvatureCorrectionBeta_
+    (
+        dict.lookupOrDefault<word>("curvatureCorrectionBeta", "faceAverage")
+    ),
+    curvatureCorrectionPtr_(),
     ownerFaceCentreValueCoeffsPtr_(),
     neighbourFaceCentreValueCoeffsPtr_()
-{}
+{
+    if
+    (
+        !std::isfinite(curvatureCorrectionScale_)
+     || curvatureCorrectionScale_ < 0 || curvatureCorrectionScale_ > 1
+    )
+    {
+        FatalErrorInFunction
+            << "curvatureCorrectionScale must be between 0 and 1"
+            << abort(FatalError);
+    }
+    if
+    (
+        curvatureCorrectionRecovery_ != "twoCell"
+     && curvatureCorrectionRecovery_ != "facePatch"
+     && curvatureCorrectionRecovery_ != "cellFit"
+    )
+    {
+        FatalErrorInFunction
+            << "curvatureCorrectionRecovery must be twoCell, facePatch or "
+            << "cellFit" << abort(FatalError);
+    }
+    if (dict.found("faceQuadratureOrder") && faceQuadratureOrder_ < 1)
+    {
+        FatalErrorInFunction
+            << "faceQuadratureOrder must be at least 1" << abort(FatalError);
+    }
+    if
+    (
+        curvatureCorrectionBeta_ != "faceAverage"
+     && curvatureCorrectionBeta_ != "faceCentre"
+    )
+    {
+        FatalErrorInFunction
+            << "curvatureCorrectionBeta must be faceAverage or faceCentre"
+            << abort(FatalError);
+    }
+}
 
 
 // * * * * * * * * * * * * * * * * Destructor  * * * * * * * * * * * * * * //
@@ -425,8 +483,19 @@ leastSquaresScheme::~leastSquaresScheme()
 
 void leastSquaresScheme::clearFaceCentreValueCoeffs() const
 {
+    curvatureCorrectionPtr_.clear();
     ownerFaceCentreValueCoeffsPtr_.clear();
     neighbourFaceCentreValueCoeffsPtr_.clear();
+}
+
+
+const quadraticGradientCorrection& leastSquaresScheme::curvatureCorrection() const
+{
+    if (curvatureCorrectionPtr_.empty())
+    {
+        curvatureCorrectionPtr_.reset(new quadraticGradientCorrection(*this));
+    }
+    return autoPtrRef(curvatureCorrectionPtr_);
 }
 
 

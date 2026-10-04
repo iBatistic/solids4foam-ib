@@ -27,6 +27,9 @@ License
 #include "symmetryFvPatchFields.H"
 #include "compatibilityFunctions.H"
 #include "hofvm.H"
+#include "quadraticGradientCorrection.H"
+#include "linearElastic.H"
+#include "alphaStab.H"
 
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -59,6 +62,52 @@ void linGeomTotalDispSolid::predict()
 
     // Calculate the stress using run-time selectable mechanical law
     mechanical().correct(sigma());
+}
+
+
+void linGeomTotalDispSolid::addHighOrderCorrection
+(
+    surfaceVectorField& traction,
+    const volVectorField& displacement
+)
+{
+    if (!highOrderResidual())
+    {
+        return;
+    }
+    const leastSquaresScheme& scheme = displacementLeastSquares();
+    if
+    (
+        !scheme.curvatureCorrectionEnabled()
+     || scheme.curvatureCorrectionScale() == 0
+    )
+    {
+        return;
+    }
+    const PtrList<mechanicalLaw>& laws = mechanical();
+    if
+    (
+        solvePressure() || laws.size() != 1
+     || laws[0].type() != linearElastic::typeName
+    )
+    {
+        FatalErrorInFunction
+            << "The face-traction correction currently requires one "
+            << "linearElastic material and solvePressure false"
+            << abort(FatalError);
+    }
+    const linearElastic& law = refCast<const linearElastic>(laws[0]);
+
+    // facePatch also removes the cubic part of the alpha jump
+    const scalar alpha =
+        momentumStabilisation().type() == alphaStab::typeName
+      ? momentumStabilisation().scaleFactor() : 0;
+
+    scheme.curvatureCorrection().addTraction
+    (
+        traction, displacement, law.mu(), law.lambda(),
+        scheme.curvatureCorrectionScale(), alpha, &impKf_
+    );
 }
 
 
@@ -616,6 +665,22 @@ linGeomTotalDispSolid::linGeomTotalDispSolid
 {
     DisRequired();
 
+    if (highOrderResidual())
+    {
+        const leastSquaresScheme& scheme = displacementLeastSquares();
+        if
+        (
+            scheme.curvatureCorrectionEnabled()
+         && scheme.curvatureCorrectionScale() > 0
+         && solutionAlg() != solutionAlgorithm::PETSC_SNES
+        )
+        {
+            FatalErrorInFunction
+                << "The face-traction correction currently requires PETScSNES"
+                << abort(FatalError);
+        }
+    }
+
     // Force all required old-time fields to be created
     fvm::d2dt2(D());
 
@@ -840,6 +905,17 @@ bool linGeomTotalDispSolid::evolve()
 
 label linGeomTotalDispSolid::initialiseJacobian(Mat& jac)
 {
+    if
+    (
+        highOrderJacobian()
+     && displacementLeastSquares().curvatureCorrectionEnabled()
+     && displacementLeastSquares().curvatureCorrectionScale() > 0
+    )
+    {
+        FatalErrorInFunction
+            << "curvatureCorrection requires highOrderJacobian false and a "
+            << "matrix-free PETSc operator" << abort(FatalError);
+    }
     if (highOrderJacobian())
     {
         return hofvm::initialiseJacobian
@@ -1017,6 +1093,9 @@ label linGeomTotalDispSolid::formResidual
     // stabilisation is set to zero on traction boundaries
     momentumStabilisation().updateVector(D, &gradD());
     traction += impKf_*momentumStabilisation().faceVector();
+
+    // Separate face contribution: original alpha stabilisation is unchanged.
+    addHighOrderCorrection(traction, D);
 
     // Enforce traction boundary conditions
     enforceTractionBoundaries(traction, D, n);

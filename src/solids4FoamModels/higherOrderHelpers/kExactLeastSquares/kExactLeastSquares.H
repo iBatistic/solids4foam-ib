@@ -85,6 +85,7 @@ class kExactLeastSquares
 :
     public leastSquaresScheme
 {
+    friend class quadraticGradientCorrection;
     // Private data
 
         //- Cell and face stencil pointer
@@ -270,12 +271,6 @@ class kExactLeastSquares
             const Eigen::DiagonalMatrix<double, Eigen::Dynamic>& W
         ) const;
 
-        //- Return the cell centre gradient coefficients
-        const CompactListList<vector>& cellGradCoeffs() const;
-
-        //- Return the cell centre second derivative coefficients
-        const CompactListList<symmTensor>& cellSecondGradCoeffs() const;
-
         //- Return the cell centre third derivative coefficients
         const CompactListList<symmTensor3rdOrder>& cellThirdGradCoeffs() const;
 
@@ -401,6 +396,12 @@ public:
 
         //- Return face-gradient reconstruction coefficients
         virtual const List<CompactListList<vector>>& faceGradCoeffs() const;
+
+        //- Return cell first-derivative coefficients
+        virtual const CompactListList<vector>& cellGradCoeffs() const;
+
+        //- Return cell second-derivative coefficients
+        virtual const CompactListList<symmTensor>& cellSecondGradCoeffs() const;
 
         //- Return second-order central cell moments owned by quadrature
         const List<symmTensor>& secondOrderCellMoments() const;

@@ -47,6 +47,8 @@ Author
 namespace Foam
 {
 
+class quadraticGradientCorrection;
+
 /*---------------------------------------------------------------------------*\
                     Class leastSquaresScheme Declaration
 \*---------------------------------------------------------------------------*/
@@ -59,6 +61,22 @@ protected:
 
         //- Const reference to the mesh
         const fvMesh& mesh_;
+
+        //- Enable the experimental p=1 or p=2 curvature correction
+        const Switch curvatureCorrection_;
+
+        //- Multiplier of the separate face-traction correction, in [0, 1]
+        const scalar curvatureCorrectionScale_;
+
+        //- p=2 third-derivative recovery: twoCell, facePatch or cellFit
+        const word curvatureCorrectionRecovery_;
+
+        //- Face quadrature order; negative selects the default p-1
+        const label faceQuadratureOrder_;
+
+        //- Where the correction's beta is evaluated: faceAverage of the
+        //  quadrature points, or faceCentre
+        const word curvatureCorrectionBeta_;
 
 
     // Protected Member Functions
@@ -79,6 +97,9 @@ protected:
 private:
 
     // Private data
+
+        //- Geometry-dependent curvature correction, constructed on demand
+        mutable autoPtr<quadraticGradientCorrection> curvatureCorrectionPtr_;
 
         //- Owner-side value coefficients at face centres
         mutable autoPtr<CompactListList<scalar>>
@@ -177,7 +198,7 @@ public:
     // Constructors
 
         //- Construct from mesh
-        explicit leastSquaresScheme(const fvMesh& mesh);
+        leastSquaresScheme(const fvMesh& mesh, const dictionary& dict);
 
 
     //- Destructor
@@ -207,6 +228,47 @@ public:
         //- Return face-gradient reconstruction coefficients
         virtual const List<CompactListList<vector>>&
         faceGradCoeffs() const = 0;
+
+        //- Cell first-derivative coefficients in cell-stencil order
+        virtual const CompactListList<vector>& cellGradCoeffs() const = 0;
+
+        //- Cell second-derivative coefficients in cell-stencil order
+        virtual const CompactListList<symmTensor>&
+        cellSecondGradCoeffs() const = 0;
+
+        //- Is the experimental curvature correction enabled?
+        bool curvatureCorrectionEnabled() const
+        {
+            return curvatureCorrection_;
+        }
+
+        //- Return the face-traction correction multiplier
+        scalar curvatureCorrectionScale() const
+        {
+            return curvatureCorrectionScale_;
+        }
+
+        //- Return the p=2 third-derivative recovery method
+        const word& curvatureCorrectionRecovery() const
+        {
+            return curvatureCorrectionRecovery_;
+        }
+
+        //- Return where the correction's beta is evaluated
+        const word& curvatureCorrectionBeta() const
+        {
+            return curvatureCorrectionBeta_;
+        }
+
+        //- Return the face quadrature order for a polynomial order
+        label faceQuadratureOrder(const label polynomialOrder) const
+        {
+            return faceQuadratureOrder_ < 0
+              ? polynomialOrder - 1 : faceQuadratureOrder_;
+        }
+
+        //- Return the cached curvature-correction geometry
+        const quadraticGradientCorrection& curvatureCorrection() const;
 
         //- Return owner-side face-centre value coefficients
         const CompactListList<scalar>& ownerFaceCentreValueCoeffs() const;

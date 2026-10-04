@@ -1639,7 +1639,7 @@ void kExactLeastSquares::makeQuadrature() const
         (
             mesh_,
             polynomialOrder_,
-            polynomialOrder_ - 1,
+            faceQuadratureOrder(polynomialOrder_),
             true
         )
     );
@@ -2170,7 +2170,7 @@ kExactLeastSquares::kExactLeastSquares
     const dictionary& dict
 )
 :
-    leastSquaresScheme(mesh),
+    leastSquaresScheme(mesh, dict),
     stencilPtr_(),
     quadraturePtr_(),
     weightFuncPtr_(),
