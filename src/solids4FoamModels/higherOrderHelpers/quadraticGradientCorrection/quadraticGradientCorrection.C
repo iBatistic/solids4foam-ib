@@ -65,6 +65,73 @@ const label* quadraticGradientCorrection::powers(const label term) const
 }
 
 
+label quadraticGradientCorrection::cubicTerm
+(
+    const label i,
+    const label j,
+    const label k
+)
+{
+    label p[3] = {0, 0, 0};
+    ++p[i];
+    ++p[j];
+    ++p[k];
+    for (label term = 0; term < 10; ++term)
+    {
+        if
+        (
+            cubicPowers[term][0] == p[0]
+         && cubicPowers[term][1] == p[1]
+         && cubicPowers[term][2] == p[2]
+        )
+        {
+            return term;
+        }
+    }
+    FatalErrorInFunction << "No cubic term for indices " << i << j << k
+        << abort(FatalError);
+    return -1;
+}
+
+
+void quadraticGradientCorrection::makeFaceMoments()
+{
+    const fvMesh& mesh = reconstruction_.mesh();
+    const pointField& pts = mesh.points();
+    auto& points = compactListListCRef(reconstruction_.quadrature().faceQuadPoints());
+    auto& weights = compactListListCRef(reconstruction_.quadrature().faceQuadWeights());
+
+    faceMoment_.setSize(mesh.nFaces(), symmTensor::zero);
+    forAll(faceMoment_, faceI)
+    {
+        const face& f = mesh.faces()[faceI];
+        const point& c = mesh.faceCentres()[faceI];
+
+        // Exact second moment about the face centre from the fan of
+        // triangles (c, a, b): A*[(ct-c)(ct-c) + sum_v (v-ct)(v-ct)/12]
+        symmTensor J(symmTensor::zero);
+        scalar area = 0;
+        forAll(f, i)
+        {
+            const point& a = pts[f[i]];
+            const point& b = pts[f[f.fcIndex(i)]];
+            const scalar At = 0.5*mag((a - c) ^ (b - c));
+            const point ct = (a + b + c)/3.0;
+            J += At*(sqr(ct - c) + (sqr(a - ct) + sqr(b - ct) + sqr(c - ct))/12.0);
+            area += At;
+        }
+
+        // Second moment as sampled by the quadrature rule
+        forAll(points[faceI], q)
+        {
+            J -= weights[faceI][q]*sqr(points[faceI][q] - c);
+        }
+
+        faceMoment_[faceI] = 0.5*J/area;
+    }
+}
+
+
 scalar quadraticGradientCorrection::sample
 (
     const label cellI,
@@ -646,7 +713,9 @@ quadraticGradientCorrection::quadraticGradientCorrection
     responseInverse_(scheme.polynomialOrder() == 1 ? scheme.mesh().nCells() : 0),
     momentQuadrature_(scheme.mesh(), scheme.polynomialOrder() + 1, 0, true),
     faceBeta_(scheme.mesh().nFaces()),
-    otherCell_(scheme.polynomialOrder() == 2 ? scheme.mesh().nFaces() : 0, -1)
+    otherCell_(scheme.polynomialOrder() == 2 ? scheme.mesh().nFaces() : 0, -1),
+    faceIntegration_(scheme.curvatureCorrectionFaceIntegration()),
+    faceMoment_()
 {
     const fvMesh& mesh = scheme.mesh();
     if
@@ -667,6 +736,12 @@ quadraticGradientCorrection::quadraticGradientCorrection
         FatalErrorInFunction
             << "curvatureCorrectionRecovery " << recovery
             << " requires polynomialOrder 2" << abort(FatalError);
+    }
+    if (faceIntegration_ && !cellFit)
+    {
+        FatalErrorInFunction
+            << "curvatureCorrectionFaceIntegration requires "
+            << "curvatureCorrectionRecovery cellFit" << abort(FatalError);
     }
     forAll(mesh.boundary(), patchI)
     {
@@ -929,6 +1004,12 @@ quadraticGradientCorrection::quadraticGradientCorrection
     {
         makeCellFitCoeffs();
     }
+    if (faceIntegration_)
+    {
+        makeFaceMoments();
+        Info<< "Curvature correction: face-integration error of the "
+            << "quadrature rule is corrected" << nl << endl;
+    }
 }
 
 
@@ -1097,6 +1178,22 @@ void quadraticGradientCorrection::addTraction
                 {
                     increment -= faceBeta_[faceI][m]*Tf[m];
                     jump += faceJumpResponse_[faceI][m]*Tf[m];
+                }
+                if (faceIntegration_)
+                {
+                    // Integration error of the face-average gradient:
+                    // M_jk * d3u/dx_i dx_j dx_k
+                    const tensor M(faceMoment_[faceI]);
+                    for (direction i = 0; i < 3; ++i)
+                    {
+                        for (direction j = 0; j < 3; ++j)
+                        {
+                            for (direction k = 0; k < 3; ++k)
+                            {
+                                increment[i] += M(j, k)*Tf[cubicTerm(i, j, k)];
+                            }
+                        }
+                    }
                 }
                 gradientIncrement[faceI] += increment*unit;
                 alphaIncrement[faceI][componentI] -= alphaWeight[faceI]*jump;

@@ -560,8 +560,9 @@ With the default face rule the corrected hex order falls from 4.6 on the
 coarse meshes to 1.85 on the finest pair, and the corrected error settles
 at 9% of the uncorrected p=2 error from mesh 8 on. With a quadratic-exact
 face rule the order stays at four on both mesh families; the finest errors
-are 1.24 (hex) and 1.68 (tet) times those of p=3 at 74% and 87% of the p=3
-run time. Stress stays second order for every p=2 variant.
+are 1.24 (hex) and 1.68 (tet) times those of p=3 at 75% and 96% of the p=3
+run time (cases timed one at a time; the earlier batch timings were
+inflated by concurrency). Stress stays second order for every p=2 variant.
 
 This settles the quadrature question: the corrected flux is exact for
 cubics at the quadrature points, but the one-point-per-triangle rule
@@ -581,6 +582,26 @@ quadrature average: the cubic cancellation is exact only when beta is
 sampled with the rule that integrates the traction, because the
 least-squares weights depend on the evaluation point. k-exact with the
 correction has not been run on eleven meshes.
+
+## Q term: closed-form face-integration correction
+
+`curvatureCorrectionFaceIntegration true` keeps one point per triangle and
+adds the rule's integration error for a cubic field to the correction:
+`0.5*(J_exact - J_rule)/A` contracted with the ten third derivatives from
+`cellFit`, where `J` are the second area moments of the face about its
+centre, exact and as sampled by the actual quadrature points. The audit
+shows `R+C+Q` and `R+Ca+Q+A` at about 1e-17 with the term on. Eleven
+meshes, MLS, alpha 0.1, finest-three orders: 4.09 (hex) and 4.05 (tet),
+against 1.90 and 2.51 without it and 4.04 and 4.02 with face order 2;
+stress 2.0. Finest errors are 1.16 (hex) and 1.21 (tet) times the MLS p=3
+errors, at 42% and 77% of the MLS p=3 time (23 s against 55 s on 29,791
+hex cells; 97 s against 125 s on 148,567 tets; all timed one at a time).
+The Q term costs 5% and 14% over the uncorrected-quadrature run and
+replaces the quadratic face rule. k-exact p=3 runs in 23 s and 109 s on the
+same meshes with lower errors and third-order stress, so it remains the
+competitor to beat. This is the finite-volume form of the flux-quadrature
+corrections in Nishikawa, AIAA 2025-3674, eqs. 4.7 and 4.13, with the
+third derivatives from the cell fit in place of nodal flux gradients.
 
 ## Proposed independent checks
 

@@ -430,6 +430,10 @@ leastSquaresScheme::leastSquaresScheme
     (
         dict.lookupOrDefault<word>("curvatureCorrectionBeta", "faceAverage")
     ),
+    curvatureCorrectionFaceIntegration_
+    (
+        dict.lookupOrDefault<Switch>("curvatureCorrectionFaceIntegration", false)
+    ),
     curvatureCorrectionPtr_(),
     ownerFaceCentreValueCoeffsPtr_(),
     neighbourFaceCentreValueCoeffsPtr_()

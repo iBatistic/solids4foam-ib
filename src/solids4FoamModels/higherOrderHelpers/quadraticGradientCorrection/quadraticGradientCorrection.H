@@ -102,6 +102,14 @@ class quadraticGradientCorrection
         //  first and the cell itself last
         List<List<FixedList<scalar, 10>>> cellCubicCoeffs_;
 
+        //- Correct the face-integration error of the quadrature rule
+        const bool faceIntegration_;
+
+        //- Half the exact minus quadrature second area moment of each face
+        //  about its centre, per unit area; contracts with the third
+        //  derivatives to the integration error of the face gradient
+        List<symmTensor> faceMoment_;
+
     // Private Member Functions
 
         //- Evaluate a factorial-scaled monomial
@@ -109,6 +117,12 @@ class quadraticGradientCorrection
 
         //- Exponents of the omitted-degree monomial for this term
         const label* powers(const label term) const;
+
+        //- Cubic term holding the third derivative with indices i, j, k
+        static label cubicTerm(const label i, const label j, const label k);
+
+        //- Construct faceMoment_ from the face geometry and the quadrature
+        void makeFaceMoments();
 
         //- Sample a monomial, respecting point or average unknowns
         scalar sample(const label cellI, const point& origin, label term) const;

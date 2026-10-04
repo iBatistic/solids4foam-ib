@@ -164,7 +164,7 @@ reconstruction, the fluxes and alpha stay p=2.
 curvatureCorrection         true;
 curvatureCorrectionScale    1;
 curvatureCorrectionRecovery cellFit;
-faceQuadratureOrder         2;
+curvatureCorrectionFaceIntegration true;
 ```
 
 ## What the results show
@@ -176,22 +176,29 @@ error in metres and the solver time in seconds:
 
 | Variant | Hex | Tet |
 | --- | ---: | ---: |
-| p=2 | 2.26 / 1.4e-10 / 12 | 2.15 / 6.2e-11 / 49 |
-| p=2 + cellFit, face order 1 | 1.90 / 1.4e-11 / 23 | 2.51 / 1.8e-11 / 96 |
-| p=2 + cellFit, face order 2 | 4.04 / 3.2e-12 / 41 | 4.02 / 6.5e-13 / 119 |
-| p=3 | 4.03 / 2.6e-12 / 56 | 3.94 / 3.8e-13 / 137 |
+| p=2 | 2.26 / 1.4e-10 / 12 | 2.15 / 6.2e-11 / 46 |
+| p=2 + cellFit, face order 1 | 1.90 / 1.4e-11 / 22 | 2.51 / 1.8e-11 / 85 |
+| p=2 + cellFit + Q, face order 1 | 4.09 / 3.0e-12 / 23 | 4.05 / 4.7e-13 / 97 |
+| p=2 + cellFit, face order 2 | 4.04 / 3.2e-12 / 41 | 4.02 / 6.5e-13 / 120 |
+| p=3 | 4.03 / 2.6e-12 / 55 | 3.94 / 3.8e-13 / 125 |
+| k-exact p=3 | 3.81 / 2.4e-12 / 23 | 4.01 / 4.2e-13 / 109 |
 
 - With the default face quadrature (one point per triangle) the correction
-  cuts the error a lot but the order returns to two on fine meshes. The
-  corrected flux is exact for cubics at the quadrature points, but the
+  alone cuts the error a lot but the order returns to two on fine meshes.
+  The corrected flux is exact for cubics at the quadrature points, but the
   exact traction of a cubic field varies quadratically over the face, and
   the one-point rule integrates that with an O(h^2) error.
-- With a quadratic-exact face rule (`faceQuadratureOrder 2`) the corrected
-  p=2 is fourth order on both mesh families, like p=3, with errors 1.2 to
-  1.7 times those of p=3 at 74% to 87% of the p=3 time. It is fourth order
-  rather than third because the remaining error after the cubic term is the
-  quartic one, which is even and cancels across the face.
-- Stress stays second order because only the face traction is corrected.
+- That integration error is itself a closed-form term in the third
+  derivatives we already have (the Q term, `curvatureCorrectionFaceIntegration`).
+  Adding it keeps one point per triangle and gives fourth order on both mesh
+  families, like p=3, with errors 1.2 times those of p=3 at 42% (hex) and
+  77% (tet) of the p=3 time. A quadratic-exact face rule does the same job
+  but costs more (75% and 96%). It is fourth order rather than third because
+  the remaining error after the cubic term is the quartic one, which is even
+  and cancels across the face.
+- Stress stays second order because only the face traction is corrected;
+  p=3 gives third-order stress, and the k-exact p=3 is about as fast as the
+  corrected scheme, so stress is where the comparison now stands.
 - Six meshes were not enough to see any of this: on the coarse meshes the
   corrected scheme showed 4.5 on hex and 2.9 on tets regardless of the face
   rule.

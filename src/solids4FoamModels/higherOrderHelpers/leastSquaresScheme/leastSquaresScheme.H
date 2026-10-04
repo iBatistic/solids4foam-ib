@@ -78,6 +78,10 @@ protected:
         //  quadrature points, or faceCentre
         const word curvatureCorrectionBeta_;
 
+        //- Also correct the face-integration error of the quadrature rule
+        //  for cubic fields (cellFit only)
+        const Switch curvatureCorrectionFaceIntegration_;
+
 
     // Protected Member Functions
 
@@ -258,6 +262,12 @@ public:
         const word& curvatureCorrectionBeta() const
         {
             return curvatureCorrectionBeta_;
+        }
+
+        //- Is the face-integration error of the quadrature rule corrected?
+        bool curvatureCorrectionFaceIntegration() const
+        {
+            return curvatureCorrectionFaceIntegration_;
         }
 
         //- Return the face quadrature order for a polynomial order

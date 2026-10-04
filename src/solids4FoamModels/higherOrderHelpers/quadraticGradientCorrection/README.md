@@ -19,9 +19,15 @@ polynomialOrder          2;                   // 1 or 2
 curvatureCorrection      true;
 curvatureCorrectionScale 1.0;                 // 0 to 1
 curvatureCorrectionRecovery twoCell;          // facePatch or cellFit (p=2)
-faceQuadratureOrder      2;                   // default p-1; use 2 with cellFit
+curvatureCorrectionFaceIntegration true;      // Q term, cellFit only
+faceQuadratureOrder      1;                   // default p-1; 2 if no Q term
 curvatureCorrectionBeta  faceAverage;         // or faceCentre (MLS, diagnostic)
 ```
+
+`curvatureCorrectionFaceIntegration` adds the face rule's integration error
+for cubic fields to the correction (the Q term below), so the default
+one-point-per-triangle rule is sufficient; without it, corrected p=2 needs
+`faceQuadratureOrder 2`.
 
 `curvatureCorrectionBeta faceCentre` evaluates beta with one reconstruction
 of the face stencil at the face centre instead of averaging the quadrature
@@ -212,6 +218,26 @@ Unlike `facePatch`, the residual at a face depends only on the owner and
 neighbour cell stencils, the same footprint as the alpha term, rather than
 on the stencils of about twelve cells.
 
+### Q term: face-integration error with cellFit
+
+For a cubic displacement the exact traction varies quadratically over a
+face, and a rule exact only for linear functions integrates it with an
+O(h^2) error that no correction evaluated at the quadrature points can
+remove. For any rule exact for linear functions, that error is
+
+```text
+∫ t dA - Σ_q w_q t(x_q) = ½ H_t : (J_exact - J_rule)
+J_exact = ∫ (x - c)(x - c) dA,   J_rule = Σ_q w_q (x_q - c)(x_q - c)
+```
+
+with c the face centre and H_t the (constant) Hessian of the traction, which
+is linear in the third derivatives T. With `cellFit` the per-face tensor
+`M = ½ (J_exact - J_rule)/A` is stored (`faceMoment_`), and the face-average
+gradient increment gains `M_jk T_ijk`, which the stress law turns into
+traction like the β term. J_exact comes from the fan of triangles about the
+face centre; J_rule from the actual quadrature points and weights, so the
+term vanishes automatically for a quadratic-exact rule.
+
 ### Alpha compensation with facePatch and cellFit
 
 The high-order `alpha` stabilisation adds
@@ -383,8 +409,13 @@ Six meshes were not enough to see the asymptotic order. On eleven meshes
 scheme with the default face quadrature order `p-1 = 1` falls back to
 second order: finest-three slopes 1.90 (hex) and 2.51 (tet). The
 one-point-per-triangle rule integrates the quadratic traction of a cubic
-field with an O(h^2) error, which the correction cannot remove. With
+field with an O(h^2) error, which the point corrections cannot remove. With
 `faceQuadratureOrder 2` the slopes are 4.04 (hex) and 4.02 (tet), against
 4.03 and 3.94 for p=3, with finest errors 1.24 and 1.68 times those of p=3
-at 74% and 87% of the p=3 run time. Stress stays second order. Use
-`faceQuadratureOrder 2` whenever the p=2 correction is on.
+at 75% and 96% of the p=3 run time. With the Q term and the default
+one-point rule they are 4.09 and 4.05, with finest errors 1.16 and 1.21
+times those of p=3 at 42% and 77% of the p=3 time (29,791 hex cells: 23 s
+against 55 s; 148,567 tets: 97 s against 125 s, each run alone). Stress
+stays second order in all cases. Use `curvatureCorrectionFaceIntegration
+true` with `cellFit`; k-exact p=3 (23 s and 109 s, third-order stress)
+remains the reference to compare against.
