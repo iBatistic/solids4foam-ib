@@ -283,6 +283,103 @@ void movingLeastSquares::makeStencils() const
             cellNn
         )
     );
+
+    // Stencils are final before they are used by anyone else, as the matrix
+    // sparsity and coefficient storage depend on their size
+    if (adaptiveStencil_.active())
+    {
+        adaptStencils();
+    }
+}
+
+
+void movingLeastSquares::adaptStencils() const
+{
+    leastSquaresStencil& stencilRef = autoPtrRef(stencilPtr_);
+
+    // Face stencils
+    {
+        const auto stencilSize =
+        [&](const label faceI) -> label
+        {
+            return
+                compactListListCRef(stencilRef.facesStencil())[faceI].size();
+        };
+
+        const scalarField estimate
+        (
+            adaptiveStencil_.adapt
+            (
+                "face",
+                mesh_.nFaces(),
+                [&](adaptiveStencil::conditioning& request)
+                {
+                    calcFaceCoeffs(&request);
+                },
+                stencilSize,
+                [&](const labelUList& faces, const labelUList& nExtra)
+                {
+                    stencilRef.enlargeFacesStencil(faces, nExtra);
+                }
+            )
+        );
+
+        scalarField size(mesh_.nFaces());
+        forAll(size, faceI)
+        {
+            size[faceI] = stencilSize(faceI);
+        }
+
+        adaptiveStencil::writeFaceField(mesh_, "faceStencilSize", size);
+        adaptiveStencil::writeFaceField
+        (
+            mesh_,
+            "faceConditionEstimate",
+            estimate
+        );
+    }
+
+    // Cell stencils
+    {
+        const auto stencilSize =
+        [&](const label cellI) -> label
+        {
+            return
+                compactListListCRef(stencilRef.cellsStencil())[cellI].size();
+        };
+
+        const scalarField estimate
+        (
+            adaptiveStencil_.adapt
+            (
+                "cell",
+                mesh_.nCells(),
+                [&](adaptiveStencil::conditioning& request)
+                {
+                    calcCellCoeffs(&request);
+                },
+                stencilSize,
+                [&](const labelUList& cells, const labelUList& nExtra)
+                {
+                    stencilRef.enlargeCellsStencil(cells, nExtra);
+                }
+            )
+        );
+
+        scalarField size(mesh_.nCells());
+        forAll(size, cellI)
+        {
+            size[cellI] = stencilSize(cellI);
+        }
+
+        adaptiveStencil::writeCellField(mesh_, "cellStencilSize", size);
+        adaptiveStencil::writeCellField
+        (
+            mesh_,
+            "cellConditionEstimate",
+            estimate
+        );
+    }
 }
 
 
@@ -536,7 +633,10 @@ movingLeastSquares::QRSolution movingLeastSquares::QRSolve
 }
 
 
-void movingLeastSquares::calcCellCoeffs() const
+void movingLeastSquares::calcCellCoeffs
+(
+    adaptiveStencil::conditioning* conditioningPtr
+) const
 {
     if (debug)
     {
@@ -570,29 +670,30 @@ void movingLeastSquares::calcCellCoeffs() const
         rowSizes[cI] = stencils[cI].size() + 1;
     }
 
-    // Allocate CompactListList for interpolation coefficients
-    cellInterpCoeffsPtr_.set(new CompactListList<scalar>(rowSizes));
-    CompactListList<scalar>& cellInterpCoeffs =
-        autoPtrRef(cellInterpCoeffsPtr_);
-
-    // Allocate CompactListList for gradient interpolation coefficients
-    cellGradCoeffsPtr_.set(new CompactListList<vector>(rowSizes));
-    CompactListList<vector>& cellGradCoeffs =
-        autoPtrRef(cellGradCoeffsPtr_);
-
-    if (polynomialOrder() >= 2)
+    // Coefficients are not stored if only the condition number estimates
+    // are requested
+    if (!conditioningPtr)
     {
-        cellSecondGradCoeffsPtr_.set
-        (
-            new CompactListList<symmTensor>(rowSizes)
-        );
-    }
-    if (polynomialOrder() >= 3)
-    {
-        cellThirdGradCoeffsPtr_.set
-        (
-            new CompactListList<symmTensor3rdOrder>(rowSizes)
-        );
+        // Allocate CompactListList for interpolation coefficients
+        cellInterpCoeffsPtr_.set(new CompactListList<scalar>(rowSizes));
+
+        // Allocate CompactListList for gradient interpolation coefficients
+        cellGradCoeffsPtr_.set(new CompactListList<vector>(rowSizes));
+
+        if (polynomialOrder() >= 2)
+        {
+            cellSecondGradCoeffsPtr_.set
+            (
+                new CompactListList<symmTensor>(rowSizes)
+            );
+        }
+        if (polynomialOrder() >= 3)
+        {
+            cellThirdGradCoeffsPtr_.set
+            (
+                new CompactListList<symmTensor3rdOrder>(rowSizes)
+            );
+        }
     }
 
     // Calculate Taylor series exponents, exponents differs for 2D and 3D case
@@ -627,6 +728,12 @@ void movingLeastSquares::calcCellCoeffs() const
 
     forAll(stencils, cellI)
     {
+        // Condition number estimate is requested for active stencils only
+        if (conditioningPtr && !conditioningPtr->active[cellI])
+        {
+            continue;
+        }
+
         const labelUList stencil = stencils[cellI];
         const vector& cellC = CI[cellI];
 
@@ -714,9 +821,22 @@ void movingLeastSquares::calcCellCoeffs() const
         // Cell-centre point weight
         W.diagonal()(Nn-1) = 1.0;
 
+        if (conditioningPtr)
+        {
+            conditioningPtr->estimate[cellI] =
+                adaptiveStencil_.conditionEstimate(Q, W);
+
+            continue;
+        }
+
         QRSolution qrs = QRSolve(Q, W);
 
         const Eigen::MatrixXd& A = qrs.A;
+
+        CompactListList<scalar>& cellInterpCoeffs =
+            autoPtrRef(cellInterpCoeffsPtr_);
+        CompactListList<vector>& cellGradCoeffs =
+            autoPtrRef(cellGradCoeffsPtr_);
 
         if (calcConditionNumber_)
         {
@@ -827,7 +947,7 @@ void movingLeastSquares::calcCellCoeffs() const
         }
     }
 
-    if (calcConditionNumber_)
+    if (calcConditionNumber_ && !conditioningPtr)
     {
         Info<< "Writing " << cellConditionNumber().name() << " to time = "
             << mesh.time().value() << endl;
@@ -840,7 +960,10 @@ void movingLeastSquares::calcCellCoeffs() const
 }
 
 
-void movingLeastSquares::calcFaceCoeffs() const
+void movingLeastSquares::calcFaceCoeffs
+(
+    adaptiveStencil::conditioning* conditioningPtr
+) const
 {
     if (debug)
     {
@@ -861,12 +984,15 @@ void movingLeastSquares::calcFaceCoeffs() const
     const surfaceVectorField& Sf = mesh.Sf();
     const globalIndex& globalCells = stencil().globalCells();
 
-    faceGradCoeffsPtr_.set
-    (
-        new List<CompactListList<vector>>(mesh.nFaces())
-    );
-    List<CompactListList<vector>>& faceGradCoeffs =
-        autoPtrRef(faceGradCoeffsPtr_);
+    // Coefficients are not stored if only the condition number estimates
+    // are requested
+    if (!conditioningPtr)
+    {
+        faceGradCoeffsPtr_.set
+        (
+            new List<CompactListList<vector>>(mesh.nFaces())
+        );
+    }
 
     // Calculate Taylor series exponents, exponents differs for 2D and 3D case
     DynamicList<FixedList<label, 3>> exponents;
@@ -902,6 +1028,18 @@ void movingLeastSquares::calcFaceCoeffs() const
     // Loop over all faces
     forAll(stencils, faceI)
     {
+        // Condition number estimate is requested for active stencils only
+        if (conditioningPtr)
+        {
+            if (!conditioningPtr->active[faceI])
+            {
+                continue;
+            }
+
+            // Largest estimate of the face quadrature points is stored
+            conditioningPtr->estimate[faceI] = 0.0;
+        }
+
         const UList<label>& stencil = stencils[faceI];
 
         // Centre of current face
@@ -989,8 +1127,12 @@ void movingLeastSquares::calcFaceCoeffs() const
         const label nbOfQuadPts = curFaceQuadPts.size();
 
         // Allocate CompactListList for this face
-        labelList rowSizes(nbOfQuadPts, Nn);
-        faceGradCoeffs[faceI] = CompactListList<vector>(rowSizes);
+        if (!conditioningPtr)
+        {
+            labelList rowSizes(nbOfQuadPts, Nn);
+            autoPtrRef(faceGradCoeffsPtr_)[faceI] =
+                CompactListList<vector>(rowSizes);
+        }
 
         // Average face condition number
         scalar avgCond = 0.0;
@@ -1090,9 +1232,24 @@ void movingLeastSquares::calcFaceCoeffs() const
                 W.diagonal()[cI] = weightFunc().weight(d, maxDist);
             }
 
+            if (conditioningPtr)
+            {
+                conditioningPtr->estimate[faceI] =
+                    max
+                    (
+                        conditioningPtr->estimate[faceI],
+                        adaptiveStencil_.conditionEstimate(Q, W)
+                    );
+
+                continue;
+            }
+
             QRSolution qrs = QRSolve(Q, W);
 
             const Eigen::MatrixXd& A = qrs.A;
+
+            List<CompactListList<vector>>& faceGradCoeffs =
+                autoPtrRef(faceGradCoeffsPtr_);
 
             if (calcConditionNumber_)
             {
@@ -1113,7 +1270,7 @@ void movingLeastSquares::calcFaceCoeffs() const
 
         }
 
-        if (calcConditionNumber_)
+        if (calcConditionNumber_ && !conditioningPtr)
         {
             // Store face average condition number
             if (faceI < mesh_.nInternalFaces())
@@ -1132,7 +1289,7 @@ void movingLeastSquares::calcFaceCoeffs() const
         }
     }
 
-    if (calcConditionNumber_)
+    if (calcConditionNumber_ && !conditioningPtr)
     {
         Info<< "Writing " << faceConditionNumber().name() << " to time = "
             << mesh.time().value() << endl;
@@ -1177,6 +1334,7 @@ movingLeastSquares::movingLeastSquares
     (
         dict.lookupOrDefault<Switch>("calcConditionNumber", false)
     ),
+    adaptiveStencil_(dict, minNn()),
     cellInterpCoeffsPtr_(),
     cellGradCoeffsPtr_(),
     cellSecondGradCoeffsPtr_(),
